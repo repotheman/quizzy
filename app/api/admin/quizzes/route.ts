@@ -1,0 +1,46 @@
+import { NextResponse } from "next/server"
+import { auth } from "@/lib/auth"
+import { sql, generateId } from "@/lib/db"
+
+export async function GET() {
+  const session = await auth()
+  
+  if (!session || session.user.role !== "ADMIN") {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  }
+
+  const quizzes = await sql`
+    SELECT * FROM quizzes WHERE "createdById" = ${session.user.id}
+    ORDER BY "createdAt" DESC
+  `
+
+  return NextResponse.json(quizzes)
+}
+
+export async function POST(request: Request) {
+  const session = await auth()
+  
+  if (!session || session.user.role !== "ADMIN") {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  }
+
+  try {
+    const { title, description, timeLimitMinutes, passingScore, shuffleQuestions } = await request.json()
+
+    if (!title || !timeLimitMinutes) {
+      return NextResponse.json({ error: "Missing required fields" }, { status: 400 })
+    }
+
+    const id = generateId()
+    
+    await sql`
+      INSERT INTO quizzes (id, title, description, "timeLimitMinutes", "passingScore", "shuffleQuestions", "createdById")
+      VALUES (${id}, ${title}, ${description || null}, ${timeLimitMinutes}, ${passingScore || 70}, ${shuffleQuestions || false}, ${session.user.id})
+    `
+
+    return NextResponse.json({ id, message: "Quiz created successfully" }, { status: 201 })
+  } catch (error) {
+    console.error("Create quiz error:", error)
+    return NextResponse.json({ error: "Failed to create quiz" }, { status: 500 })
+  }
+}

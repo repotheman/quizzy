@@ -1,0 +1,150 @@
+// prisma/schema.prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id         String   @id @default(cuid())
+  email      String   @unique
+  name       String
+  password   String
+  role       Role     @default(INTERN)
+  department String?
+  createdAt  DateTime @default(now())
+
+  attempts    Attempt[]
+  assignments Assignment[]
+
+  @@map("users")
+}
+
+enum Role {
+  ADMIN
+  INTERN
+}
+
+model Quiz {
+  id            String   @id @default(cuid())
+  title         String
+  description   String?
+  duration      Int
+  passingScore  Int      @default(60)
+  shuffleQ      Boolean  @default(false)
+  shuffleOpts   Boolean  @default(false)
+  maxViolations Int      @default(3)
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  questions   Question[]
+  attempts    Attempt[]
+  assignments Assignment[]
+
+  @@map("quizzes")
+}
+
+model Question {
+  id            String       @id @default(cuid())
+  quizId        String
+  text          String
+  type          QuestionType @default(MCQ)
+  options       Json
+  correctOption String
+  marks         Int          @default(1)
+  order         Int
+
+  quiz    Quiz     @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  answers Answer[]
+
+  @@map("questions")
+}
+
+enum QuestionType {
+  MCQ
+  TRUE_FALSE
+}
+
+model Assignment {
+  id         String    @id @default(cuid())
+  userId     String
+  quizId     String
+  assignedAt DateTime  @default(now())
+  dueDate    DateTime?
+
+  user User @relation(fields: [userId], references: [id])
+  quiz Quiz @relation(fields: [quizId], references: [id])
+
+  @@unique([userId, quizId])
+  @@map("assignments")
+}
+
+model Attempt {
+  id            String        @id @default(cuid())
+  userId        String
+  quizId        String
+  status        AttemptStatus @default(IN_PROGRESS)
+  startedAt     DateTime      @default(now())
+  submittedAt   DateTime?
+  timeTaken     Int?
+  score         Int?
+  percentage    Float?
+  passed        Boolean?
+  violations    Int           @default(0)
+  autoSubmitted Boolean       @default(false)
+
+  user          User           @relation(fields: [userId], references: [id])
+  quiz          Quiz           @relation(fields: [quizId], references: [id])
+  answers       Answer[]
+  violationLogs ViolationLog[]
+
+  @@map("attempts")
+}
+
+enum AttemptStatus {
+  IN_PROGRESS
+  SUBMITTED
+  TIMED_OUT
+  TERMINATED
+}
+
+model Answer {
+  id          String  @id @default(cuid())
+  attemptId   String
+  questionId  String
+  selectedOpt String?
+  isCorrect   Boolean @default(false)
+
+  attempt  Attempt  @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  question Question @relation(fields: [questionId], references: [id])
+
+  @@unique([attemptId, questionId])
+  @@map("answers")
+}
+
+model ViolationLog {
+  id         String        @id @default(cuid())
+  attemptId  String
+  type       ViolationType
+  occurredAt DateTime      @default(now())
+
+  attempt Attempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+
+  @@map("violation_logs")
+}
+
+enum ViolationType {
+  TAB_SWITCH
+  FULLSCREEN_EXIT
+  COPY_ATTEMPT
+  PASTE_ATTEMPT
+  RIGHT_CLICK
+  DEVTOOLS_OPEN
+  WINDOW_BLUR
+  CONTEXT_MENU
+}

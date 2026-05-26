@@ -35,6 +35,8 @@ import {
   FileQuestion,
   Users,
   ClipboardList,
+  Trophy,
+  BarChart3,
   Moon,
   Sun,
   LogOut,
@@ -61,6 +63,16 @@ const adminNavItems = [
     title: "Results",
     href: "/admin/results",
     icon: ClipboardList,
+  },
+  {
+    title: "Leaderboard",
+    href: "/admin/leaderboard",
+    icon: Trophy,
+  },
+  {
+    title: "Analytics",
+    href: "/admin/analytics",
+    icon: BarChart3,
   },
 ]
 

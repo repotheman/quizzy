@@ -6,41 +6,76 @@ datasource db {
   provider = "postgresql"
 }
 
-model User {
-  id        String   @id @default(uuid())
-  email     String   @unique
-  password  String
-  name      String
-  role      Role     @default(INTERN)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @default(now()) @updatedAt
-
-  createdQuizzes Quiz[]           @relation("QuizCreator")
-  assignments    QuizAssignment[]
-  attempts       QuizAttempt[]
-
-  @@map("users")
-}
+// ─── Enums ────────────────────────────────────────────────────────────────────
 
 enum Role {
   ADMIN
   INTERN
 }
 
+enum QuestionType {
+  MCQ
+  TRUE_FALSE
+}
+
+enum AttemptStatus {
+  IN_PROGRESS
+  SUBMITTED
+  TIMED_OUT
+  TERMINATED
+}
+
+enum ViolationType {
+  TAB_SWITCH
+  FULLSCREEN_EXIT
+  COPY_ATTEMPT
+  PASTE_ATTEMPT
+  RIGHT_CLICK
+  DEVTOOLS_OPEN
+  WINDOW_BLUR
+  CONTEXT_MENU
+}
+
+// ─── Models ───────────────────────────────────────────────────────────────────
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  password  String
+  name      String
+  role      Role     @default(INTERN)
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+
+  createdQuizzes   Quiz[]           @relation("QuizCreator")
+  publishedQuizzes Quiz[]           @relation("QuizPublisher")
+  assignments      QuizAssignment[]
+  attempts         QuizAttempt[]
+
+  @@map("users")
+}
+
 model Quiz {
-  id               String   @id @default(uuid())
+  id               String  @id @default(uuid())
   title            String
   description      String?
   timeLimitMinutes Int
-  passingScore     Int      @default(60)
-  shuffleQuestions Boolean  @default(false)
-  maxViolations    Int      @default(3)
-  isPublished      Boolean  @default(false)
-  createdById      String
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @default(now()) @updatedAt
+  passingScore     Int     @default(60) // percentage 0–100
+  shuffleQuestions Boolean @default(false)
+  shuffleOptions   Boolean @default(false)
+  maxViolations    Int     @default(3)
+  isPublished      Boolean @default(false)
+
+  // Result visibility — null means hidden from interns
+  resultsPublishedAt DateTime? @db.Timestamptz
+  resultsPublishedBy String?   // null = auto-published, set = admin who published
+
+  createdById String
+  createdAt   DateTime @default(now()) @db.Timestamptz
+  updatedAt   DateTime @updatedAt @db.Timestamptz
 
   createdBy   User             @relation("QuizCreator", fields: [createdById], references: [id])
+  publishedBy User?            @relation("QuizPublisher", fields: [resultsPublishedBy], references: [id])
   questions   Question[]
   assignments QuizAssignment[]
   attempts    QuizAttempt[]
@@ -55,18 +90,15 @@ model Question {
   text      String
   points    Int          @default(1)
   order     Int
-  createdAt DateTime     @default(now())
-  updatedAt DateTime     @default(now()) @updatedAt
+  createdAt DateTime     @default(now()) @db.Timestamptz
+  updatedAt DateTime     @updatedAt @db.Timestamptz
 
   quiz    Quiz     @relation(fields: [quizId], references: [id], onDelete: Cascade)
   options Option[]
+  answers Answer[]
 
+  @@unique([quizId, order])
   @@map("questions")
-}
-
-enum QuestionType {
-  MCQ
-  TRUE_FALSE
 }
 
 model Option {
@@ -79,6 +111,7 @@ model Option {
   question Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
   answers  Answer[]
 
+  @@unique([questionId, order])
   @@map("options")
 }
 
@@ -87,10 +120,13 @@ model QuizAssignment {
   quizId       String
   internId     String
   assignedById String
-  dueDate      DateTime?
-  startAt      DateTime?
-  endAt        DateTime?
-  assignedAt   DateTime  @default(now())
+  // Join window — intern can only start between startAt and endAt
+  // null on either = no restriction on that side
+  startAt      DateTime? @db.Timestamptz
+  endAt        DateTime? @db.Timestamptz
+  // Attendance — set when intern creates their attempt
+  joinedAt     DateTime? @db.Timestamptz
+  assignedAt   DateTime  @default(now()) @db.Timestamptz
 
   quiz   Quiz @relation(fields: [quizId], references: [id], onDelete: Cascade)
   intern User @relation(fields: [internId], references: [id], onDelete: Cascade)
@@ -100,33 +136,36 @@ model QuizAssignment {
 }
 
 model QuizAttempt {
-  id               String        @id @default(uuid())
-  quizId           String
-  internId         String
-  status           AttemptStatus @default(IN_PROGRESS)
-  score            Int?
-  totalPoints      Int?
-  percentage       Float?
-  passed           Boolean?
-  violations       Int           @default(0)
-  autoSubmitted    Boolean       @default(false)
-  startedAt        DateTime      @default(now())
-  submittedAt      DateTime?
+  id       String        @id @default(uuid())
+  quizId   String
+  internId String
+  status   AttemptStatus @default(IN_PROGRESS)
+
+  // Scoring — populated on finalization only
+  score       Int?
+  totalPoints Int?
+  percentage  Float?
+  passed      Boolean?
+  // Rank among all attempts for this quiz — set when results are published
+  rank        Int?
+
+  // Proctoring
+  violations    Int     @default(0)
+  autoSubmitted Boolean @default(false)
+
+  // Timing — timer = timeLimitMinutes * 60 - elapsed since startedAt
+  startedAt        DateTime  @default(now()) @db.Timestamptz
+  submittedAt      DateTime? @db.Timestamptz
   timeSpentSeconds Int?
 
-  quiz       Quiz        @relation(fields: [quizId], references: [id], onDelete: Cascade)
-  intern     User        @relation(fields: [internId], references: [id], onDelete: Cascade)
-  answers    Answer[]
+  quiz          Quiz        @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  intern        User        @relation(fields: [internId], references: [id], onDelete: Cascade)
+  answers       Answer[]
   violationLogs Violation[]
 
+  // One attempt per intern per quiz (enforced at DB level)
+  @@unique([internId, quizId])
   @@map("quiz_attempts")
-}
-
-enum AttemptStatus {
-  IN_PROGRESS
-  SUBMITTED
-  TIMED_OUT
-  TERMINATED
 }
 
 model Answer {
@@ -134,10 +173,13 @@ model Answer {
   attemptId        String
   questionId       String
   selectedOptionId String?
+  // isCorrect is null until finalization — set in bulk when attempt is finalized
   isCorrect        Boolean?
-  answeredAt       DateTime @default(now())
+  answeredAt       DateTime @default(now()) @db.Timestamptz
+  updatedAt        DateTime @updatedAt @db.Timestamptz
 
   attempt        QuizAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  question       Question    @relation(fields: [questionId], references: [id], onDelete: Cascade)
   selectedOption Option?     @relation(fields: [selectedOptionId], references: [id], onDelete: SetNull)
 
   @@unique([attemptId, questionId])
@@ -145,24 +187,13 @@ model Answer {
 }
 
 model Violation {
-  id          String        @id @default(uuid())
-  attemptId   String
-  type        ViolationType
-  description String?
-  timestamp   DateTime      @default(now())
+  id        String        @id @default(uuid())
+  attemptId String
+  type      ViolationType
+  timestamp DateTime      @default(now()) @db.Timestamptz
 
   attempt QuizAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
 
   @@map("violations")
 }
 
-enum ViolationType {
-  TAB_SWITCH
-  FULLSCREEN_EXIT
-  COPY_ATTEMPT
-  PASTE_ATTEMPT
-  RIGHT_CLICK
-  DEVTOOLS_OPEN
-  WINDOW_BLUR
-  CONTEXT_MENU
-}

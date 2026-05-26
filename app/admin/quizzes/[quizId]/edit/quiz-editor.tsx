@@ -167,14 +167,17 @@ export function QuizEditor({ quiz: initialQuiz }: QuizEditorProps) {
 
   function handlePublishClick() {
     if (quiz.isPublished) {
-      // Unpublish logic
       handleUnpublish()
     } else {
-      // Show publish & assign dialog
       if (quiz.questions.length === 0) {
         toast.error("Cannot publish a quiz with no questions")
         return
       }
+      // Reset window state so re-publish starts fresh
+      setStartAt(null)
+      setEndAt(null)
+      setAssignType("all")
+      setSelectedInternIds([])
       setPublishDialogOpen(true)
     }
   }
@@ -212,10 +215,13 @@ export function QuizEditor({ quiz: initialQuiz }: QuizEditorProps) {
       if (!pubRes.ok) throw new Error("Failed to publish quiz")
 
       // 2. Assign to interns
-      const body: any = { 
-        quizId: quiz.id, 
-        startAt: startAt || null, 
-        endAt: endAt || null 
+      // Convert datetime-local strings (no tz info) to proper ISO UTC strings.
+      // new Date(value) in the browser treats datetime-local as LOCAL time,
+      // so .toISOString() gives the correct UTC equivalent.
+      const body: any = {
+        quizId:  quiz.id,
+        startAt: startAt ? new Date(startAt).toISOString() : null,
+        endAt:   endAt   ? new Date(endAt).toISOString()   : null,
       }
 
       if (assignType === "all") {
@@ -733,7 +739,8 @@ export function QuizEditor({ quiz: initialQuiz }: QuizEditorProps) {
           <DialogHeader>
             <DialogTitle>Publish & Assign Quiz</DialogTitle>
             <DialogDescription>
-              Publishing this quiz will make it available to interns.
+              Publishing makes this quiz available to interns. If interns are already assigned,
+              their join window will be updated with the new times.
             </DialogDescription>
           </DialogHeader>
 
@@ -798,7 +805,7 @@ export function QuizEditor({ quiz: initialQuiz }: QuizEditorProps) {
 
             <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-2">
-                <Label htmlFor="startAt">Start Date & Time (Optional)</Label>
+                <Label htmlFor="startAt">Join Window Opens (Optional)</Label>
                 <Input
                   id="startAt"
                   type="datetime-local"
@@ -807,7 +814,7 @@ export function QuizEditor({ quiz: initialQuiz }: QuizEditorProps) {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="endAt">End Date & Time (Optional)</Label>
+                <Label htmlFor="endAt">Join Window Closes (Optional)</Label>
                 <Input
                   id="endAt"
                   type="datetime-local"
@@ -816,6 +823,15 @@ export function QuizEditor({ quiz: initialQuiz }: QuizEditorProps) {
                 />
               </div>
             </div>
+
+            {(startAt || endAt) && (
+              <p className="text-xs text-muted-foreground rounded-md border px-3 py-2">
+                Interns can join
+                {startAt ? <> from <strong>{new Date(startAt).toLocaleString()}</strong></> : null}
+                {endAt   ? <> until <strong>{new Date(endAt).toLocaleString()}</strong></> : null}.
+                {" "}Once started, they get the full quiz time limit.
+              </p>
+            )}
           </div>
 
           <DialogFooter>

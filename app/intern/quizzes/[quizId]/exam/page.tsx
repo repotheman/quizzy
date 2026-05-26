@@ -43,31 +43,9 @@ export default async function ExamPage({
   if (!row) redirect(`/intern/quizzes/${quizId}`)
   if (row.status !== "IN_PROGRESS") redirect("/intern/history")
 
-  // Check assignment deadline using DB time
-  const [assignment] = await sql`
-    SELECT
-      "endAt",
-      CASE WHEN "endAt" IS NOT NULL THEN EXTRACT(EPOCH FROM ("endAt" - NOW()))::int ELSE NULL END AS deadline_remaining
-    FROM quiz_assignments
-    WHERE "quizId" = ${row.quizId}
-    AND "internId" = ${session.user.id}
-    LIMIT 1
-  `
-
-  const deadlineRemaining: number | null = assignment?.deadline_remaining != null
-    ? Number(assignment.deadline_remaining)
-    : null
-
-  // If deadline already passed, finalize and redirect
-  if (deadlineRemaining !== null && deadlineRemaining <= 0) {
-    await finalizeAttempt({ attemptId, internId: session.user.id, autoSubmit: true, reason: "TIMED_OUT" })
-    redirect("/intern/history")
-  }
-
-  const timeLimitRemaining = Math.max(0, Number(row.remaining_seconds))
-  const initialSeconds = deadlineRemaining === null
-    ? timeLimitRemaining
-    : Math.min(timeLimitRemaining, Math.max(0, deadlineRemaining))
+  // Timer is purely based on timeLimitMinutes from when the intern started.
+  // endAt is only a join window gate — once you're in, you get the full time.
+  const initialSeconds = Math.max(0, Number(row.remaining_seconds))
 
   // Already expired — finalize and redirect
   if (initialSeconds <= 0) {

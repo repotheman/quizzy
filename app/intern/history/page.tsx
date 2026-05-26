@@ -14,20 +14,28 @@ import { History, Clock, Target, CheckCircle, XCircle, AlertTriangle } from "luc
 import { format } from "date-fns"
 
 async function getAttemptHistory(internId: string) {
-  // Use DB time for results_pending check to avoid server clock skew
   return sql`
     SELECT
-      qa.*,
-      q.title                                                          AS quiz_title,
-      q."passingScore"                                                 AS passing_score,
-      (SELECT COUNT(*) FROM violations WHERE "attemptId" = qa.id)     AS violation_count,
-      asg."endAt" IS NOT NULL AND NOW() < asg."endAt"                 AS results_pending
+      qa.id,
+      qa.status,
+      qa.score,
+      qa."totalPoints",
+      qa.percentage,
+      qa.passed,
+      qa.rank,
+      qa.violations,
+      qa."autoSubmitted",
+      qa."startedAt",
+      qa."submittedAt",
+      qa."timeSpentSeconds",
+      q.title                                                        AS quiz_title,
+      q."passingScore"                                               AS passing_score,
+      q."resultsPublishedAt"                                         AS results_published_at,
+      (SELECT COUNT(*) FROM violations WHERE "attemptId" = qa.id)   AS violation_count
     FROM quiz_attempts qa
     JOIN quizzes q ON q.id = qa."quizId"
-    LEFT JOIN quiz_assignments asg
-      ON asg."quizId" = qa."quizId" AND asg."internId" = qa."internId"
     WHERE qa."internId" = ${internId}
-    AND qa.status != 'IN_PROGRESS'
+    AND   qa.status    != 'IN_PROGRESS'
     ORDER BY qa."startedAt" DESC
   `
 }
@@ -68,52 +76,57 @@ export default async function HistoryPage() {
                   <TableHead>Quiz</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Score</TableHead>
-                  <TableHead>Time</TableHead>
+                  <TableHead>Rank</TableHead>
+                  <TableHead>Time Spent</TableHead>
                   <TableHead>Violations</TableHead>
                   <TableHead>Date</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {attempts.map((attempt) => {
-                  const resultsPending = Boolean(attempt.results_pending)
+                  // Results are hidden until admin publishes them
+                  const resultsHidden = !attempt.results_published_at
 
                   return (
                     <TableRow key={attempt.id}>
                       <TableCell className="font-medium">{attempt.quiz_title}</TableCell>
 
+                      {/* Status */}
                       <TableCell>
-                        {resultsPending ? (
+                        {attempt.status === "TERMINATED" ? (
+                          <Badge variant="destructive">Terminated</Badge>
+                        ) : attempt.status === "TIMED_OUT" ? (
+                          <Badge variant="destructive">Timed Out</Badge>
+                        ) : resultsHidden ? (
                           <Badge variant="outline">
                             <Clock className="mr-1 size-3" />
                             Pending Results
                           </Badge>
-                        ) : attempt.status === "SUBMITTED" ? (
-                          attempt.passed ? (
-                            <Badge className="bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300">
-                              <CheckCircle className="mr-1 size-3" />
-                              Passed
-                            </Badge>
-                          ) : (
-                            <Badge className="bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300">
-                              <XCircle className="mr-1 size-3" />
-                              Failed
-                            </Badge>
-                          )
+                        ) : attempt.passed ? (
+                          <Badge className="bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300">
+                            <CheckCircle className="mr-1 size-3" />
+                            Passed
+                          </Badge>
                         ) : (
-                          <Badge variant="destructive">
-                            {attempt.status === "TIMED_OUT" ? "Timed Out" : "Terminated"}
+                          <Badge className="bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300">
+                            <XCircle className="mr-1 size-3" />
+                            Failed
                           </Badge>
                         )}
                       </TableCell>
 
+                      {/* Score */}
                       <TableCell>
-                        {resultsPending ? (
-                          <span className="text-muted-foreground italic">Hidden</span>
+                        {resultsHidden ? (
+                          <span className="text-muted-foreground italic text-sm">Hidden</span>
                         ) : attempt.percentage !== null ? (
                           <div className="flex items-center gap-1">
                             <Target className="size-3.5 text-muted-foreground" />
                             <span className={attempt.passed ? "text-green-600 dark:text-green-400 font-medium" : ""}>
                               {Math.round(attempt.percentage)}%
+                            </span>
+                            <span className="text-xs text-muted-foreground">
+                              ({attempt.score}/{attempt.totalPoints})
                             </span>
                           </div>
                         ) : (
@@ -121,6 +134,18 @@ export default async function HistoryPage() {
                         )}
                       </TableCell>
 
+                      {/* Rank */}
+                      <TableCell>
+                        {resultsHidden ? (
+                          <span className="text-muted-foreground italic text-sm">Hidden</span>
+                        ) : attempt.rank ? (
+                          <span className="font-mono font-medium">#{attempt.rank}</span>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </TableCell>
+
+                      {/* Time spent */}
                       <TableCell>
                         {attempt.timeSpentSeconds
                           ? `${Math.floor(attempt.timeSpentSeconds / 60)}m ${attempt.timeSpentSeconds % 60}s`
@@ -128,6 +153,7 @@ export default async function HistoryPage() {
                         }
                       </TableCell>
 
+                      {/* Violations */}
                       <TableCell>
                         {Number(attempt.violation_count) > 0 ? (
                           <Badge variant="destructive" className="font-mono">
@@ -139,7 +165,8 @@ export default async function HistoryPage() {
                         )}
                       </TableCell>
 
-                      <TableCell className="text-muted-foreground">
+                      {/* Date */}
+                      <TableCell className="text-muted-foreground text-sm">
                         {format(new Date(attempt.startedAt), "MMM d, yyyy h:mm a")}
                       </TableCell>
                     </TableRow>

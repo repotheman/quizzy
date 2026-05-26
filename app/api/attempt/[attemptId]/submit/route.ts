@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { finalizeAttempt } from "@/lib/attempts"
+import type { FinalizeReason } from "@/lib/attempts"
 
 export async function POST(
   request: NextRequest,
@@ -13,20 +14,25 @@ export async function POST(
     }
 
     const { attemptId } = await params
-    const { autoSubmit, reason } = await request.json() as { autoSubmit?: boolean; reason?: string }
+    const { autoSubmit, reason } = await request.json() as {
+      autoSubmit?: boolean
+      reason?: FinalizeReason
+    }
 
     const result = await finalizeAttempt({
       attemptId,
-      internId: session.user.id,
-      autoSubmit,
+      internId:   session.user.id,
+      autoSubmit: autoSubmit ?? false,
       reason,
     })
 
     return NextResponse.json(result)
   } catch (error) {
-    console.error("Failed to submit attempt:", error)
+    console.error("[submit/route]", error)
     const message = error instanceof Error ? error.message : "Failed to submit attempt"
-    const status = message === "Attempt not found" ? 404 : message === "Attempt is not in progress" ? 400 : 500
+    const status  =
+      message === "Attempt not found"           ? 404 :
+      message === "Attempt is not in progress"  ? 400 : 500
     return NextResponse.json({ error: message }, { status })
   }
 }

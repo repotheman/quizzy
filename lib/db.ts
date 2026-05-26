@@ -6,24 +6,26 @@ if (!process.env.DATABASE_URL) {
 
 export const sql = neon(process.env.DATABASE_URL)
 
-// Helper to generate UUIDs
 export function generateId(): string {
   return crypto.randomUUID()
 }
 
-// Types matching our database schema
-export type Role = 'ADMIN' | 'INTERN'
-export type QuestionType = 'MCQ' | 'TRUE_FALSE'
+// ─── Enums ────────────────────────────────────────────────────────────────────
+
+export type Role          = 'ADMIN' | 'INTERN'
+export type QuestionType  = 'MCQ' | 'TRUE_FALSE'
 export type AttemptStatus = 'IN_PROGRESS' | 'SUBMITTED' | 'TIMED_OUT' | 'TERMINATED'
-export type ViolationType = 
-  | 'TAB_SWITCH' 
-  | 'FULLSCREEN_EXIT' 
-  | 'COPY_ATTEMPT' 
-  | 'PASTE_ATTEMPT' 
-  | 'RIGHT_CLICK' 
-  | 'DEVTOOLS_OPEN' 
-  | 'WINDOW_BLUR' 
+export type ViolationType =
+  | 'TAB_SWITCH'
+  | 'FULLSCREEN_EXIT'
+  | 'COPY_ATTEMPT'
+  | 'PASTE_ATTEMPT'
+  | 'RIGHT_CLICK'
+  | 'DEVTOOLS_OPEN'
+  | 'WINDOW_BLUR'
   | 'CONTEXT_MENU'
+
+// ─── Model types ──────────────────────────────────────────────────────────────
 
 export interface User {
   id: string
@@ -40,10 +42,13 @@ export interface Quiz {
   title: string
   description: string | null
   timeLimitMinutes: number
-  passingScore: number
+  passingScore: number        // percentage 0–100
   shuffleQuestions: boolean
+  shuffleOptions: boolean
   maxViolations: number
   isPublished: boolean
+  resultsPublishedAt: Date | null  // null = results hidden from interns
+  resultsPublishedBy: string | null // null = auto-published
   createdById: string
   createdAt: Date
   updatedAt: Date
@@ -73,7 +78,9 @@ export interface QuizAssignment {
   quizId: string
   internId: string
   assignedById: string
-  dueDate: Date | null
+  startAt: Date | null   // join window opens  (null = no restriction)
+  endAt: Date | null     // join window closes (null = no restriction)
+  joinedAt: Date | null  // attendance — set when intern starts their attempt
   assignedAt: Date
 }
 
@@ -86,6 +93,7 @@ export interface QuizAttempt {
   totalPoints: number | null
   percentage: number | null
   passed: boolean | null
+  rank: number | null          // set when results are published
   violations: number
   autoSubmitted: boolean
   startedAt: Date
@@ -98,14 +106,14 @@ export interface Answer {
   attemptId: string
   questionId: string
   selectedOptionId: string | null
-  isCorrect: boolean | null
+  isCorrect: boolean | null  // null until finalization
   answeredAt: Date
+  updatedAt: Date
 }
 
 export interface Violation {
   id: string
   attemptId: string
   type: ViolationType
-  description: string | null
   timestamp: Date
 }

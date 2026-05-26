@@ -113,12 +113,24 @@ export function ExamShell({
   })
 
   // ── Proctoring ────────────────────────────────────────────────────────────
-  const handleViolation = useCallback((type: ViolationType) => {
-    setViolations(v => v + 1)
+  const handleViolation = useCallback((type: ViolationType, newCount: number, terminated: boolean) => {
+    setViolations(newCount)
+    if (terminated) {
+      toast.error("Exam terminated due to too many violations.", {
+        description: "You will be redirected shortly.",
+        duration: 4000,
+      })
+      // Give the toast a moment to show before redirecting
+      setTimeout(() => {
+        if (document.fullscreenElement) document.exitFullscreen().catch(() => {})
+        router.push("/intern/history")
+      }, 2500)
+      return
+    }
     toast.error(`Violation: ${type.replace(/_/g, " ")}`, {
-      description: "This has been recorded and will be reviewed.",
+      description: `${newCount} violation(s) recorded. Exam will be terminated at ${maxViolations}.`,
     })
-  }, [])
+  }, [router, maxViolations])
 
   const { isFullscreen, requestFullscreen } = useExamProctor({
     attemptId,

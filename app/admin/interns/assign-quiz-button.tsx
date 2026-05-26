@@ -35,16 +35,43 @@ interface AssignQuizButtonProps {
   quizzes: Quiz[]
 }
 
+/**
+ * Convert a datetime-local string (e.g. "2024-01-01T23:10") to a full ISO
+ * string in the user's local timezone so the server stores the correct UTC time.
+ *
+ * datetime-local has NO timezone info — new Date("2024-01-01T23:10") in Node
+ * parses as UTC, which is wrong for IST users (they'd be 5h30m off).
+ * By appending the local offset we get the correct UTC equivalent.
+ */
+function localDatetimeToISO(value: string): string {
+  if (!value) return ""
+  // new Date(value) in the browser interprets datetime-local as LOCAL time
+  return new Date(value).toISOString()
+}
+
 export function AssignQuizButton({ internId, internName, quizzes }: AssignQuizButtonProps) {
   const router = useRouter()
   const [open, setOpen] = useState(false)
   const [selectedQuizId, setSelectedQuizId] = useState<string>("")
-  const [dueDate, setDueDate] = useState<string>("")
+  const [startAt, setStartAt] = useState<string>("")
+  const [endAt, setEndAt] = useState<string>("")
   const [isAssigning, setIsAssigning] = useState(false)
+
+  function reset() {
+    setSelectedQuizId("")
+    setStartAt("")
+    setEndAt("")
+  }
 
   async function handleAssign() {
     if (!selectedQuizId) {
       toast.error("Please select a quiz")
+      return
+    }
+
+    // Client-side window validation
+    if (startAt && endAt && new Date(startAt) >= new Date(endAt)) {
+      toast.error("Start time must be before end time")
       return
     }
 
@@ -55,9 +82,11 @@ export function AssignQuizButton({ internId, internName, quizzes }: AssignQuizBu
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          quizId: selectedQuizId,
+          quizId:  selectedQuizId,
           internId,
-          dueDate: dueDate || null,
+          // Convert local datetime strings to proper ISO UTC strings
+          startAt: startAt ? localDatetimeToISO(startAt) : null,
+          endAt:   endAt   ? localDatetimeToISO(endAt)   : null,
         }),
       })
 
@@ -69,8 +98,7 @@ export function AssignQuizButton({ internId, internName, quizzes }: AssignQuizBu
 
       toast.success("Quiz assigned successfully")
       setOpen(false)
-      setSelectedQuizId("")
-      setDueDate("")
+      reset()
       router.refresh()
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to assign quiz")
@@ -80,7 +108,7 @@ export function AssignQuizButton({ internId, internName, quizzes }: AssignQuizBu
   }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) reset() }}>
       <DialogTrigger asChild>
         <Button variant="outline" size="sm">
           <ClipboardList className="mr-2 size-4" />
@@ -91,7 +119,8 @@ export function AssignQuizButton({ internId, internName, quizzes }: AssignQuizBu
         <DialogHeader>
           <DialogTitle>Assign Quiz</DialogTitle>
           <DialogDescription>
-            Assign a quiz to {internName}
+            Assign a quiz to {internName}. Set a join window so interns can only
+            start between the two times. Leave blank for no restriction.
           </DialogDescription>
         </DialogHeader>
 
@@ -118,15 +147,41 @@ export function AssignQuizButton({ internId, internName, quizzes }: AssignQuizBu
             </Select>
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="dueDate">Due Date (optional)</Label>
-            <Input
-              id="dueDate"
-              type="datetime-local"
-              value={dueDate}
-              onChange={(e) => setDueDate(e.target.value)}
-            />
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="startAt">
+                Join Window Opens
+                <span className="ml-1 text-xs text-muted-foreground">(optional)</span>
+              </Label>
+              <Input
+                id="startAt"
+                type="datetime-local"
+                value={startAt}
+                onChange={(e) => setStartAt(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="endAt">
+                Join Window Closes
+                <span className="ml-1 text-xs text-muted-foreground">(optional)</span>
+              </Label>
+              <Input
+                id="endAt"
+                type="datetime-local"
+                value={endAt}
+                onChange={(e) => setEndAt(e.target.value)}
+              />
+            </div>
           </div>
+
+          {startAt && endAt && (
+            <p className="text-xs text-muted-foreground">
+              Interns can join between{" "}
+              <strong>{new Date(startAt).toLocaleString()}</strong> and{" "}
+              <strong>{new Date(endAt).toLocaleString()}</strong>.
+              Once started, they get the full quiz time limit.
+            </p>
+          )}
         </div>
 
         <DialogFooter>

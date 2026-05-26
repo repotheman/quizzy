@@ -1,8 +1,8 @@
 "use client"
 
-// ExamShell manages its own local state now.
-// This store is kept as a thin stub so any remaining imports don't break.
-// It can be removed entirely once all references are cleaned up.
+// ExamShell manages all exam state locally.
+// This file is kept as a no-op so any stale imports don't break the build.
+// TODO: remove once all references are cleaned up.
 
 import { create } from "zustand"
 

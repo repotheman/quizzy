@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { sql, generateId } from "@/lib/db"
+import { finalizeAttempt } from "@/lib/attempts"
 import type { ViolationType } from "@/lib/db"
 
 export async function POST(
@@ -20,9 +21,17 @@ export async function POST(
       return NextResponse.json({ error: "Violation type is required" }, { status: 400 })
     }
 
+    // Fetch attempt + quiz maxViolations in one query
     const [attempt] = await sql`
-      SELECT id, status, violations FROM quiz_attempts
-      WHERE id = ${attemptId} AND "internId" = ${session.user.id}
+      SELECT
+        qa.id,
+        qa.status,
+        qa.violations,
+        q."maxViolations"
+      FROM quiz_attempts qa
+      JOIN quizzes q ON q.id = qa."quizId"
+      WHERE qa.id        = ${attemptId}
+      AND   qa."internId" = ${session.user.id}
     `
 
     if (!attempt) {
@@ -34,15 +43,35 @@ export async function POST(
 
     const newViolations = Number(attempt.violations) + 1
 
+    // Log the violation
     await sql`
       INSERT INTO violations (id, "attemptId", type, timestamp)
       VALUES (${generateId()}, ${attemptId}, ${type}, NOW())
     `
+
+    // Update violation count
     await sql`
-      UPDATE quiz_attempts SET violations = ${newViolations} WHERE id = ${attemptId}
+      UPDATE quiz_attempts
+      SET violations = ${newViolations}
+      WHERE id = ${attemptId}
     `
 
-    return NextResponse.json({ violations: newViolations })
+    // Auto-terminate if max violations reached
+    if (newViolations >= Number(attempt.maxViolations)) {
+      await finalizeAttempt({
+        attemptId,
+        internId:   session.user.id,
+        autoSubmit: true,
+        reason:     "TERMINATED",
+      })
+
+      return NextResponse.json({
+        violations: newViolations,
+        terminated: true,
+      })
+    }
+
+    return NextResponse.json({ violations: newViolations, terminated: false })
   } catch (error) {
     console.error("[violation/route] error:", error)
     return NextResponse.json({ error: "Failed to log violation" }, { status: 500 })

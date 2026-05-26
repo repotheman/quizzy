@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
@@ -49,7 +49,8 @@ import {
   Save,
   Eye,
   Check,
-  X
+  X,
+  Upload
 } from "lucide-react"
 import type { Quiz, Question, Option, QuestionType } from "@/lib/db"
 
@@ -109,6 +110,41 @@ export function QuizEditor({ quiz: initialQuiz }: QuizEditorProps) {
     shuffleQuestions: quiz.shuffleQuestions,
   })
 
+  // Bulk Upload State
+  const [bulkDialogOpen, setBulkDialogOpen] = useState(false)
+  const [bulkFormat, setBulkFormat] = useState<"json" | "csv">("json")
+  const [bulkData, setBulkData] = useState("")
+  const [isUploading, setIsUploading] = useState(false)
+  const [bulkErrors, setBulkErrors] = useState<{row: number, message: string}[]>([])
+
+  // Publish-Assign State
+  const [publishDialogOpen, setPublishDialogOpen] = useState(false)
+  const [assignType, setAssignType] = useState<"all" | "specific">("all")
+  const [interns, setInterns] = useState<{ id: string; name: string; email: string }[]>([])
+  const [selectedInternIds, setSelectedInternIds] = useState<string[]>([])
+  const [startAt, setStartAt] = useState<string | null>(null)
+  const [endAt, setEndAt] = useState<string | null>(null)
+
+  // Load interns for publish dialog
+  useEffect(() => {
+    if (publishDialogOpen && assignType === "specific" && interns.length === 0) {
+      let mounted = true
+      ;(async () => {
+        try {
+          const res = await fetch(`/api/admin/interns`)
+          if (!res.ok) return
+          const data = await res.json()
+          if (!mounted) return
+          setInterns(data)
+        } catch (err) {
+          console.error("Failed to load interns:", err)
+        }
+      })()
+      return () => { mounted = false }
+    }
+  }, [publishDialogOpen, assignType, interns.length])
+
+
   async function handleSaveSettings() {
     setIsSaving(true)
     try {
@@ -121,7 +157,7 @@ export function QuizEditor({ quiz: initialQuiz }: QuizEditorProps) {
       if (!response.ok) throw new Error("Failed to save")
 
       toast.success("Settings saved")
-      router.refresh()
+      setQuiz({...quiz, ...settings})
     } catch {
       toast.error("Failed to save settings")
     } finally {
@@ -129,26 +165,33 @@ export function QuizEditor({ quiz: initialQuiz }: QuizEditorProps) {
     }
   }
 
-  async function handlePublishToggle() {
-    setIsPublishing(true)
-    try {
-      const newPublishedState = !quiz.isPublished
-      
-      if (newPublishedState && quiz.questions.length === 0) {
+  function handlePublishClick() {
+    if (quiz.isPublished) {
+      // Unpublish logic
+      handleUnpublish()
+    } else {
+      // Show publish & assign dialog
+      if (quiz.questions.length === 0) {
         toast.error("Cannot publish a quiz with no questions")
         return
       }
+      setPublishDialogOpen(true)
+    }
+  }
 
+  async function handleUnpublish() {
+    setIsPublishing(true)
+    try {
       const response = await fetch(`/api/admin/quizzes/${quiz.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ isPublished: newPublishedState }),
+        body: JSON.stringify({ isPublished: false }),
       })
 
-      if (!response.ok) throw new Error("Failed to update")
+      if (!response.ok) throw new Error("Failed to unpublish")
 
-      setQuiz({ ...quiz, isPublished: newPublishedState })
-      toast.success(newPublishedState ? "Quiz published" : "Quiz unpublished")
+      setQuiz({ ...quiz, isPublished: false })
+      toast.success("Quiz unpublished")
     } catch {
       toast.error("Failed to update publish status")
     } finally {
@@ -156,6 +199,110 @@ export function QuizEditor({ quiz: initialQuiz }: QuizEditorProps) {
     }
   }
 
+  async function handlePublishAndAssign() {
+    setIsPublishing(true)
+    try {
+      // 1. Publish quiz
+      const pubRes = await fetch(`/api/admin/quizzes/${quiz.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isPublished: true }),
+      })
+
+      if (!pubRes.ok) throw new Error("Failed to publish quiz")
+
+      // 2. Assign to interns
+      const body: any = { 
+        quizId: quiz.id, 
+        startAt: startAt || null, 
+        endAt: endAt || null 
+      }
+
+      if (assignType === "all") {
+        body.assignToAll = true
+      } else {
+        if (selectedInternIds.length === 0) {
+          toast.error("Please select at least one intern")
+          setIsPublishing(false)
+          return
+        }
+        body.internIds = selectedInternIds
+      }
+
+      const assignRes = await fetch(`/api/admin/assignments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      })
+
+      if (!assignRes.ok) {
+        const errData = await assignRes.json()
+        throw new Error(errData.error || "Failed to assign quiz")
+      }
+
+      setQuiz({ ...quiz, isPublished: true })
+      setPublishDialogOpen(false)
+      toast.success("Quiz published and assigned successfully!")
+    } catch (err) {
+      console.error(err)
+      toast.error(err instanceof Error ? err.message : "An error occurred")
+    } finally {
+      setIsPublishing(false)
+    }
+  }
+
+  // --- Bulk Upload Functions ---
+  async function handleBulkUpload() {
+    if (!bulkData.trim()) {
+      toast.error("Please provide data to upload")
+      return
+    }
+    
+    setIsUploading(true)
+    setBulkErrors([])
+
+    try {
+      const response = await fetch(`/api/admin/quizzes/${quiz.id}/questions/bulk-upload`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ format: bulkFormat, data: bulkData }),
+      })
+
+      const result = await response.json()
+
+      if (!response.ok) {
+        if (result.errors && result.errors.length > 0) {
+          setBulkErrors(result.errors)
+        } else {
+          toast.error(result.error || "Failed to import questions")
+        }
+        return
+      }
+
+      if (result.errors && result.errors.length > 0) {
+        setBulkErrors(result.errors)
+        toast.warning(`Imported ${result.imported} questions, but had some errors.`)
+      } else {
+        toast.success(`Successfully imported ${result.imported} questions!`)
+        setBulkDialogOpen(false)
+        setBulkData("")
+      }
+
+      // Refresh questions list internally
+      const qRes = await fetch(`/api/admin/quizzes/${quiz.id}/questions`)
+      if (qRes.ok) {
+        const questions = await qRes.json()
+        setQuiz(prev => ({ ...prev, questions }))
+      }
+    } catch (err) {
+      console.error(err)
+      toast.error("An unexpected error occurred during import")
+    } finally {
+      setIsUploading(false)
+    }
+  }
+
+  // --- Question Add/Edit/Delete ---
   function openAddQuestion() {
     setEditingQuestion(null)
     setQuestionForm(defaultQuestionForm)
@@ -260,13 +407,12 @@ export function QuizEditor({ quiz: initialQuiz }: QuizEditorProps) {
       toast.success(editingQuestion ? "Question updated" : "Question added")
       setQuestionDialogOpen(false)
       
-      // Refresh the page to get updated questions
-      router.refresh()
-      
-      // Fetch updated quiz data
+      // Refresh questions
       const quizResponse = await fetch(`/api/admin/quizzes/${quiz.id}/questions`)
-      const questions = await quizResponse.json()
-      setQuiz({ ...quiz, questions })
+      if (quizResponse.ok) {
+        const questions = await quizResponse.json()
+        setQuiz(prev => ({ ...prev, questions }))
+      }
     } catch {
       toast.error("Failed to save question")
     } finally {
@@ -321,7 +467,7 @@ export function QuizEditor({ quiz: initialQuiz }: QuizEditorProps) {
           </div>
         </div>
         <Button
-          onClick={handlePublishToggle}
+          onClick={handlePublishClick}
           disabled={isPublishing}
           variant={quiz.isPublished ? "outline" : "default"}
         >
@@ -337,7 +483,11 @@ export function QuizEditor({ quiz: initialQuiz }: QuizEditorProps) {
         </TabsList>
 
         <TabsContent value="questions" className="space-y-4">
-          <div className="flex justify-end">
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setBulkDialogOpen(true)}>
+              <Upload className="mr-2 size-4" />
+              Import Questions
+            </Button>
             <Button onClick={openAddQuestion}>
               <Plus className="mr-2 size-4" />
               Add Question
@@ -352,12 +502,18 @@ export function QuizEditor({ quiz: initialQuiz }: QuizEditorProps) {
                 </div>
                 <h3 className="text-lg font-semibold mb-2">No questions yet</h3>
                 <p className="text-muted-foreground text-center mb-4">
-                  Add questions to your quiz to get started.
+                  Add questions to your quiz or import them in bulk to get started.
                 </p>
-                <Button onClick={openAddQuestion}>
-                  <Plus className="mr-2 size-4" />
-                  Add Question
-                </Button>
+                <div className="flex gap-4">
+                   <Button variant="outline" onClick={() => setBulkDialogOpen(true)}>
+                    <Upload className="mr-2 size-4" />
+                    Import
+                  </Button>
+                  <Button onClick={openAddQuestion}>
+                    <Plus className="mr-2 size-4" />
+                    Add Question
+                  </Button>
+                </div>
               </CardContent>
             </Card>
           ) : (
@@ -507,6 +663,170 @@ export function QuizEditor({ quiz: initialQuiz }: QuizEditorProps) {
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* Bulk Upload Dialog */}
+      <Dialog open={bulkDialogOpen} onOpenChange={setBulkDialogOpen}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Import Questions</DialogTitle>
+            <DialogDescription>
+              Bulk import questions via JSON or CSV format.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            <div className="flex gap-4 items-center">
+              <Label>Format:</Label>
+              <RadioGroup value={bulkFormat} onValueChange={(val) => setBulkFormat(val as "json" | "csv")} className="flex gap-4">
+                <div className="flex items-center gap-2">
+                  <RadioGroupItem value="json" id="fmt-json" />
+                  <Label htmlFor="fmt-json" className="font-normal">JSON</Label>
+                </div>
+                <div className="flex items-center gap-2">
+                  <RadioGroupItem value="csv" id="fmt-csv" />
+                  <Label htmlFor="fmt-csv" className="font-normal">CSV</Label>
+                </div>
+              </RadioGroup>
+              <div className="ml-auto">
+                <Button variant="link" size="sm" asChild>
+                  <a href={`/templates/quiz-template.${bulkFormat}`} download>Download Template</a>
+                </Button>
+              </div>
+            </div>
+
+            <Textarea
+              className="font-mono text-xs h-64"
+              placeholder={`Paste your ${bulkFormat.toUpperCase()} data here...`}
+              value={bulkData}
+              onChange={(e) => setBulkData(e.target.value)}
+            />
+            
+            <p className="text-xs text-muted-foreground">
+              Alternatively, you can open the template file, edit it, and paste its contents here.
+            </p>
+
+            {bulkErrors.length > 0 && (
+              <div className="rounded-md bg-destructive/10 p-3 border border-destructive/20 mt-4">
+                <h4 className="text-sm font-semibold text-destructive mb-2">Import Errors</h4>
+                <ul className="text-xs text-destructive space-y-1 list-disc pl-4 max-h-32 overflow-y-auto">
+                  {bulkErrors.map((err, i) => (
+                    <li key={i}>Row {err.row}: {err.message}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setBulkDialogOpen(false)}>Cancel</Button>
+            <Button onClick={handleBulkUpload} disabled={isUploading || !bulkData.trim()}>
+              {isUploading && <Loader2 className="mr-2 size-4 animate-spin" />}
+              Import
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Publish & Assign Dialog */}
+      <Dialog open={publishDialogOpen} onOpenChange={setPublishDialogOpen}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Publish & Assign Quiz</DialogTitle>
+            <DialogDescription>
+              Publishing this quiz will make it available to interns.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-6 py-4">
+            <div className="space-y-3">
+              <Label>Who should take this quiz?</Label>
+              <RadioGroup value={assignType} onValueChange={(val) => setAssignType(val as "all" | "specific")}>
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="all" id="assign-all" />
+                  <Label htmlFor="assign-all">All Interns</Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="specific" id="assign-specific" />
+                  <Label htmlFor="assign-specific">Specific Interns</Label>
+                </div>
+              </RadioGroup>
+            </div>
+
+            {assignType === "specific" && (
+              <div className="space-y-2 border rounded-md p-4 bg-muted/20">
+                <Label>Select Interns</Label>
+                <Select
+                  value={selectedInternIds.length > 0 ? "selected" : ""}
+                  onValueChange={(val) => {
+                    if (!selectedInternIds.includes(val)) {
+                      setSelectedInternIds([...selectedInternIds, val])
+                    }
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Add intern..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {interns.filter(i => !selectedInternIds.includes(i.id)).map(i => (
+                      <SelectItem key={i.id} value={i.id}>{i.name} ({i.email})</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                {selectedInternIds.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mt-3">
+                    {selectedInternIds.map(id => {
+                      const intern = interns.find(i => i.id === id)
+                      if (!intern) return null
+                      return (
+                        <Badge key={id} variant="secondary" className="flex items-center gap-1 pr-1">
+                          {intern.name}
+                          <button
+                            type="button"
+                            className="rounded-full p-0.5 hover:bg-background"
+                            onClick={() => setSelectedInternIds(selectedInternIds.filter(x => x !== id))}
+                          >
+                            <X className="size-3" />
+                          </button>
+                        </Badge>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="startAt">Start Date & Time (Optional)</Label>
+                <Input
+                  id="startAt"
+                  type="datetime-local"
+                  value={startAt || ""}
+                  onChange={(e) => setStartAt(e.target.value || null)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="endAt">End Date & Time (Optional)</Label>
+                <Input
+                  id="endAt"
+                  type="datetime-local"
+                  value={endAt || ""}
+                  onChange={(e) => setEndAt(e.target.value || null)}
+                />
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPublishDialogOpen(false)}>Cancel</Button>
+            <Button onClick={handlePublishAndAssign} disabled={isPublishing}>
+              {isPublishing && <Loader2 className="mr-2 size-4 animate-spin" />}
+              Publish & Assign
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Add/Edit Question Dialog */}
       <Dialog open={questionDialogOpen} onOpenChange={setQuestionDialogOpen}>

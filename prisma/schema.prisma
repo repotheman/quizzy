@@ -1,25 +1,23 @@
-// prisma/schema.prisma
-
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
 }
 
 model User {
-  id         String   @id @default(cuid())
-  email      String   @unique
-  name       String
-  password   String
-  role       Role     @default(INTERN)
-  department String?
-  createdAt  DateTime @default(now())
+  id        String   @id @default(uuid())
+  email     String   @unique
+  password  String
+  name      String
+  role      Role     @default(INTERN)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
 
-  attempts    Attempt[]
-  assignments Assignment[]
+  createdQuizzes Quiz[]           @relation("QuizCreator")
+  assignments    QuizAssignment[]
+  attempts       QuizAttempt[]
 
   @@map("users")
 }
@@ -30,37 +28,38 @@ enum Role {
 }
 
 model Quiz {
-  id            String   @id @default(cuid())
-  title         String
-  description   String?
-  duration      Int
-  passingScore  Int      @default(60)
-  shuffleQ      Boolean  @default(false)
-  shuffleOpts   Boolean  @default(false)
-  maxViolations Int      @default(3)
-  isActive      Boolean  @default(true)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id               String   @id @default(uuid())
+  title            String
+  description      String?
+  timeLimitMinutes Int
+  passingScore     Int      @default(60)
+  shuffleQuestions Boolean  @default(false)
+  maxViolations    Int      @default(3)
+  isPublished      Boolean  @default(false)
+  createdById      String
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @default(now()) @updatedAt
 
+  createdBy   User             @relation("QuizCreator", fields: [createdById], references: [id])
   questions   Question[]
-  attempts    Attempt[]
-  assignments Assignment[]
+  assignments QuizAssignment[]
+  attempts    QuizAttempt[]
 
   @@map("quizzes")
 }
 
 model Question {
-  id            String       @id @default(cuid())
-  quizId        String
-  text          String
-  type          QuestionType @default(MCQ)
-  options       Json
-  correctOption String
-  marks         Int          @default(1)
-  order         Int
+  id        String       @id @default(uuid())
+  quizId    String
+  type      QuestionType @default(MCQ)
+  text      String
+  points    Int          @default(1)
+  order     Int
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @default(now()) @updatedAt
 
   quiz    Quiz     @relation(fields: [quizId], references: [id], onDelete: Cascade)
-  answers Answer[]
+  options Option[]
 
   @@map("questions")
 }
@@ -70,40 +69,57 @@ enum QuestionType {
   TRUE_FALSE
 }
 
-model Assignment {
-  id         String    @id @default(cuid())
-  userId     String
-  quizId     String
-  assignedAt DateTime  @default(now())
-  dueDate    DateTime?
+model Option {
+  id         String  @id @default(uuid())
+  questionId String
+  text       String
+  isCorrect  Boolean @default(false)
+  order      Int
 
-  user User @relation(fields: [userId], references: [id])
-  quiz Quiz @relation(fields: [quizId], references: [id])
+  question Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  answers  Answer[]
 
-  @@unique([userId, quizId])
-  @@map("assignments")
+  @@map("options")
 }
 
-model Attempt {
-  id            String        @id @default(cuid())
-  userId        String
-  quizId        String
-  status        AttemptStatus @default(IN_PROGRESS)
-  startedAt     DateTime      @default(now())
-  submittedAt   DateTime?
-  timeTaken     Int?
-  score         Int?
-  percentage    Float?
-  passed        Boolean?
-  violations    Int           @default(0)
-  autoSubmitted Boolean       @default(false)
+model QuizAssignment {
+  id           String    @id @default(uuid())
+  quizId       String
+  internId     String
+  assignedById String
+  dueDate      DateTime?
+  startAt      DateTime?
+  endAt        DateTime?
+  assignedAt   DateTime  @default(now())
 
-  user          User           @relation(fields: [userId], references: [id])
-  quiz          Quiz           @relation(fields: [quizId], references: [id])
-  answers       Answer[]
-  violationLogs ViolationLog[]
+  quiz   Quiz @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  intern User @relation(fields: [internId], references: [id], onDelete: Cascade)
 
-  @@map("attempts")
+  @@unique([internId, quizId])
+  @@map("quiz_assignments")
+}
+
+model QuizAttempt {
+  id               String        @id @default(uuid())
+  quizId           String
+  internId         String
+  status           AttemptStatus @default(IN_PROGRESS)
+  score            Int?
+  totalPoints      Int?
+  percentage       Float?
+  passed           Boolean?
+  violations       Int           @default(0)
+  autoSubmitted    Boolean       @default(false)
+  startedAt        DateTime      @default(now())
+  submittedAt      DateTime?
+  timeSpentSeconds Int?
+
+  quiz       Quiz        @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  intern     User        @relation(fields: [internId], references: [id], onDelete: Cascade)
+  answers    Answer[]
+  violationLogs Violation[]
+
+  @@map("quiz_attempts")
 }
 
 enum AttemptStatus {
@@ -114,28 +130,30 @@ enum AttemptStatus {
 }
 
 model Answer {
-  id          String  @id @default(cuid())
-  attemptId   String
-  questionId  String
-  selectedOpt String?
-  isCorrect   Boolean @default(false)
+  id               String   @id @default(uuid())
+  attemptId        String
+  questionId       String
+  selectedOptionId String?
+  isCorrect        Boolean?
+  answeredAt       DateTime @default(now())
 
-  attempt  Attempt  @relation(fields: [attemptId], references: [id], onDelete: Cascade)
-  question Question @relation(fields: [questionId], references: [id])
+  attempt        QuizAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  selectedOption Option?     @relation(fields: [selectedOptionId], references: [id], onDelete: SetNull)
 
   @@unique([attemptId, questionId])
   @@map("answers")
 }
 
-model ViolationLog {
-  id         String        @id @default(cuid())
-  attemptId  String
-  type       ViolationType
-  occurredAt DateTime      @default(now())
+model Violation {
+  id          String        @id @default(uuid())
+  attemptId   String
+  type        ViolationType
+  description String?
+  timestamp   DateTime      @default(now())
 
-  attempt Attempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  attempt QuizAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
 
-  @@map("violation_logs")
+  @@map("violations")
 }
 
 enum ViolationType {

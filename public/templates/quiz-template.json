@@ -1,0 +1,22 @@
+[
+  {
+    "type": "MCQ",
+    "text": "What is the capital of France?",
+    "points": 1,
+    "options": ["London", "Paris", "Berlin", "Madrid"],
+    "correctAnswer": 1
+  },
+  {
+    "type": "MCQ",
+    "text": "Which programming language is used for web development?",
+    "points": 2,
+    "options": ["Python", "JavaScript", "C++", "Java"],
+    "correctAnswer": 1
+  },
+  {
+    "type": "TRUE_FALSE",
+    "text": "The Earth revolves around the Sun.",
+    "points": 1,
+    "correctAnswer": 0
+  }
+]

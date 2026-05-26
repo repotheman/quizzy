@@ -10,47 +10,74 @@ export async function POST(request: Request) {
   }
 
   try {
-    const { quizId, internId, dueDate } = await request.json()
+    const { quizId, internId, internIds, internEmails, assignToAll, dueDate, startAt, endAt } = await request.json()
 
-    if (!quizId || !internId) {
+    if (!quizId || (!internId && !internIds && !internEmails && !assignToAll)) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 })
     }
 
-    // Check if quiz exists and is published
+    // Check if quiz exists (don't require isPublished — caller handles publish first)
     const [quiz] = await sql`
-      SELECT id FROM quizzes WHERE id = ${quizId} AND "isPublished" = true
+      SELECT id FROM quizzes WHERE id = ${quizId}
     `
 
     if (!quiz) {
-      return NextResponse.json({ error: "Quiz not found or not published" }, { status: 404 })
+      return NextResponse.json({ error: "Quiz not found" }, { status: 404 })
     }
 
-    // Check if intern exists
-    const [intern] = await sql`
-      SELECT id FROM users WHERE id = ${internId} AND role = 'INTERN'
-    `
+    // Resolve intern IDs from input
+    let internIdsToAssign: string[] = []
 
-    if (!intern) {
-      return NextResponse.json({ error: "Intern not found" }, { status: 404 })
+    if (assignToAll) {
+      const rows = await sql`SELECT id FROM users WHERE role = 'INTERN'`
+      internIdsToAssign = rows.map((r: any) => r.id)
+    } else if (internIds && Array.isArray(internIds)) {
+      internIdsToAssign = internIds
+    } else if (internId) {
+      internIdsToAssign = [internId]
+    } else if (internEmails && Array.isArray(internEmails)) {
+      // Fix: use = ANY() instead of IN() for neon driver compatibility
+      const rows = await sql`
+        SELECT id, email FROM users WHERE email = ANY(${internEmails}) AND role = 'INTERN'
+      `
+      internIdsToAssign = rows.map((r: any) => r.id)
     }
 
-    // Check if already assigned
-    const [existing] = await sql`
-      SELECT id FROM quiz_assignments WHERE "quizId" = ${quizId} AND "internId" = ${internId}
-    `
-
-    if (existing) {
-      return NextResponse.json({ error: "Quiz already assigned to this intern" }, { status: 400 })
+    if (internIdsToAssign.length === 0) {
+      return NextResponse.json({ error: "No valid interns found to assign" }, { status: 404 })
     }
 
-    const id = generateId()
-    
-    await sql`
-      INSERT INTO quiz_assignments (id, "quizId", "internId", "assignedById", "dueDate")
-      VALUES (${id}, ${quizId}, ${internId}, ${session.user.id}, ${dueDate ? new Date(dueDate) : null})
-    `
+    const results: { internId: string; id?: string; status: string }[] = []
 
-    return NextResponse.json({ id, message: "Quiz assigned successfully" }, { status: 201 })
+    for (const iid of internIdsToAssign) {
+      // verify intern exists and role
+      const [intern] = await sql`
+        SELECT id FROM users WHERE id = ${iid} AND role = 'INTERN'
+      `
+      if (!intern) {
+        results.push({ internId: iid, status: "not_found" })
+        continue
+      }
+
+      const [existing] = await sql`
+        SELECT id FROM quiz_assignments WHERE "quizId" = ${quizId} AND "internId" = ${iid}
+      `
+
+      if (existing) {
+        results.push({ internId: iid, id: existing.id, status: "already_assigned" })
+        continue
+      }
+
+      const id = generateId()
+      await sql`
+        INSERT INTO quiz_assignments (id, "quizId", "internId", "assignedById", "dueDate", "startAt", "endAt")
+        VALUES (${id}, ${quizId}, ${iid}, ${session.user.id}, ${dueDate ? new Date(dueDate) : null}, ${startAt ? new Date(startAt) : null}, ${endAt ? new Date(endAt) : null})
+      `
+
+      results.push({ internId: iid, id, status: "assigned" })
+    }
+
+    return NextResponse.json({ message: "Assignment processed", results }, { status: 201 })
   } catch (error) {
     console.error("Assign quiz error:", error)
     return NextResponse.json({ error: "Failed to assign quiz" }, { status: 500 })

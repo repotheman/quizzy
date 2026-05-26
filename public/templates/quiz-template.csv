@@ -1,0 +1,4 @@
+type,text,points,correctAnswer,optionA,optionB,optionC,optionD
+MCQ,What is the capital of France?,1,1,London,Paris,Berlin,Madrid
+MCQ,Which programming language is used for web development?,2,1,Python,JavaScript,C++,Java
+TRUE_FALSE,The Earth revolves around the Sun.,1,0,True,False,,

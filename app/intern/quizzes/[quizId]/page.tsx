@@ -4,8 +4,9 @@ import { sql } from "@/lib/db"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Separator } from "@/components/ui/separator"
-import { AlertTriangle, Clock, FileQuestion } from "lucide-react"
+import { AlertTriangle, CheckCircle, Clock, FileQuestion, Lock } from "lucide-react"
 import { StartExamButton } from "./start-exam-button"
+import { format } from "date-fns"
 
 async function getQuizDetails(quizId: string, internId: string) {
   const quizzes = await sql`
@@ -16,11 +17,16 @@ async function getQuizDetails(quizId: string, internId: string) {
       q."timeLimitMinutes",
       q."passingScore",
       COALESCE(q."maxViolations", 3) as "maxViolations",
-      (SELECT COUNT(*) FROM questions WHERE "quizId" = q.id) as question_count
+      qa."startAt",
+      qa."endAt",
+      (SELECT COUNT(*) FROM questions WHERE "quizId" = q.id) as question_count,
+      CASE WHEN qa."startAt" IS NOT NULL THEN NOW() < qa."startAt" ELSE false END AS "notStartedYet",
+      CASE WHEN qa."endAt"   IS NOT NULL THEN NOW() > qa."endAt"   ELSE false END AS "endedAlready"
     FROM quizzes q
     JOIN quiz_assignments qa ON qa."quizId" = q.id
     WHERE q.id = ${quizId}
     AND qa."internId" = ${internId}
+    AND q."isPublished" = true
   `
   return quizzes[0] || null
 }
@@ -55,9 +61,22 @@ export default async function PreExamPage({
 
   const existingAttempt = await getExistingAttempt(quizId, session.user.id)
 
-  if (existingAttempt?.status === "SUBMITTED") {
+  if (existingAttempt && existingAttempt.status !== "IN_PROGRESS") {
     redirect("/intern/history")
   }
+
+  const now = new Date()
+  const startsAt = quiz.startAt ? new Date(quiz.startAt) : null
+  const endsAt = quiz.endAt ? new Date(quiz.endAt) : null
+  const notStartedYet = quiz.notStartedYet
+  const endedAlready = quiz.endedAlready
+  const availabilityReason = notStartedYet
+    ? "This quiz has not started yet."
+    : endedAlready
+    ? "This quiz deadline has passed and it can no longer be started."
+    : existingAttempt && existingAttempt.status !== "IN_PROGRESS"
+    ? "You already completed this quiz. View your results in history."
+    : null
 
   return (
     <div className="min-h-screen flex items-center justify-center p-4 bg-background">
@@ -91,12 +110,34 @@ export default async function PreExamPage({
               <li>You have <strong className="text-foreground">{quiz.timeLimitMinutes} minutes</strong> to complete this exam. The timer starts when you click Start.</li>
               <li>The exam runs in <strong className="text-foreground">fullscreen mode</strong>. Exiting fullscreen counts as a violation.</li>
               <li><strong className="text-foreground">Switching tabs or windows</strong> counts as a violation.</li>
-              <li>After <strong className="text-foreground">{quiz.maxViolations} violations</strong>, your exam will be automatically submitted.</li>
               <li><strong className="text-foreground">Copy, paste, right-click, and keyboard shortcuts</strong> are disabled.</li>
               <li>AI tools and external resources are <strong className="text-foreground">strictly prohibited</strong>.</li>
               <li>All violations are logged and visible to administrators.</li>
+              <li>The quiz can only be attempted <strong className="text-foreground">once</strong>.</li>
             </ol>
           </div>
+
+          {(startsAt || endsAt) && (
+            <Alert variant={notStartedYet || endedAlready ? "destructive" : "default"}>
+              <Lock className="size-4" />
+              <AlertTitle>Availability Window</AlertTitle>
+              <AlertDescription>
+                {startsAt && <p>Starts: {format(startsAt, "PPpp")}</p>}
+                {endsAt && <p>Ends: {format(endsAt, "PPpp")}</p>}
+                {availabilityReason && <p>{availabilityReason}</p>}
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {existingAttempt && existingAttempt.status !== "IN_PROGRESS" ? (
+            <Alert>
+              <CheckCircle className="size-4" />
+              <AlertTitle>Already Completed</AlertTitle>
+              <AlertDescription>
+                You have already completed this quiz. You can review the result from your history page.
+              </AlertDescription>
+            </Alert>
+          ) : null}
 
           <div className="text-sm text-muted-foreground">
             <p>Passing score: <strong className="text-foreground">{quiz.passingScore}%</strong></p>
@@ -108,6 +149,8 @@ export default async function PreExamPage({
             quizId={quizId} 
             hasInProgressAttempt={existingAttempt?.status === "IN_PROGRESS"}
             attemptId={existingAttempt?.id}
+            isLocked={notStartedYet || endedAlready || (existingAttempt && existingAttempt.status !== "IN_PROGRESS")}
+            unavailableReason={availabilityReason || undefined}
           />
         </CardContent>
       </Card>

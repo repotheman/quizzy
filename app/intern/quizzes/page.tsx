@@ -4,33 +4,41 @@ import { sql } from "@/lib/db"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { FileQuestion, Clock, PlayCircle, CheckCircle } from "lucide-react"
-import { formatDistanceToNow, isPast } from "date-fns"
+import { format, formatDistanceToNow } from "date-fns"
 
 async function getAssignedQuizzes(internId: string) {
+  // Use DB time for all window comparisons to avoid server clock skew
   const quizzes = await sql`
-    SELECT 
-      qa.id as assignment_id,
+    SELECT
+      qa.id                                                          AS assignment_id,
       qa."dueDate",
-      q.id as quiz_id,
+      qa."startAt",
+      qa."endAt",
+      q.id                                                           AS quiz_id,
       q.title,
       q.description,
       q."timeLimitMinutes",
       q."passingScore",
-      (SELECT COUNT(*) FROM questions WHERE "quizId" = q.id) as question_count,
+      (SELECT COUNT(*) FROM questions WHERE "quizId" = q.id)        AS question_count,
+      CASE WHEN qa."startAt" IS NOT NULL THEN NOW() < qa."startAt" ELSE false END AS not_started_yet,
+      CASE WHEN qa."endAt"   IS NOT NULL THEN NOW() > qa."endAt"   ELSE false END AS deadline_passed,
+      CASE WHEN qa."endAt"   IS NOT NULL THEN NOW() < qa."endAt"   ELSE false END AS results_pending,
       (
         SELECT json_agg(json_build_object(
-          'id', qat.id,
-          'status', qat.status,
+          'id',         qat.id,
+          'status',     qat.status,
           'percentage', qat.percentage,
-          'passed', qat.passed
+          'passed',     qat.passed
         ))
-        FROM quiz_attempts qat 
+        FROM quiz_attempts qat
         WHERE qat."quizId" = q.id AND qat."internId" = ${internId}
-      ) as attempts
+      ) AS attempts
     FROM quiz_assignments qa
     JOIN quizzes q ON qa."quizId" = q.id
     WHERE qa."internId" = ${internId}
+    AND q."isPublished" = true
     ORDER BY qa."dueDate" ASC NULLS LAST, qa."assignedAt" DESC
   `
   return quizzes
@@ -44,9 +52,7 @@ export default async function InternQuizzesPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold tracking-tight">My Quizzes</h1>
-        <p className="text-muted-foreground">
-          View and take your assigned quizzes
-        </p>
+        <p className="text-muted-foreground">View and take your assigned quizzes</p>
       </div>
 
       {quizzes.length === 0 ? (
@@ -62,10 +68,15 @@ export default async function InternQuizzesPage() {
       ) : (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {quizzes.map((quiz) => {
-            const attempts = quiz.attempts || []
-            const completedAttempt = attempts.find((a: { status: string }) => a.status === "SUBMITTED")
-            const inProgressAttempt = attempts.find((a: { status: string }) => a.status === "IN_PROGRESS")
-            const isOverdue = quiz.dueDate && isPast(new Date(quiz.dueDate))
+            const attempts: { id: string; status: string; percentage: number; passed: boolean }[] = quiz.attempts || []
+            const completedAttempt = attempts.find(a => a.status !== "IN_PROGRESS")
+            const inProgressAttempt = attempts.find(a => a.status === "IN_PROGRESS")
+            const notStartedYet = Boolean(quiz.not_started_yet)
+            const deadlinePassed = Boolean(quiz.deadline_passed)
+            const isResultsPending = Boolean(quiz.results_pending)
+            const startsAt = quiz.startAt ? new Date(quiz.startAt) : null
+            const endsAt = quiz.endAt ? new Date(quiz.endAt) : null
+            const isUnavailable = notStartedYet || deadlinePassed
 
             return (
               <Card key={quiz.assignment_id} className="flex flex-col">
@@ -80,24 +91,34 @@ export default async function InternQuizzesPage() {
                   </div>
                   <div className="flex flex-wrap gap-2 mt-2">
                     {completedAttempt ? (
-                      <Badge 
-                        variant={completedAttempt.passed ? "default" : "destructive"}
-                        className={completedAttempt.passed ? "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-400" : ""}
-                      >
-                        <CheckCircle className="mr-1 size-3" />
-                        {completedAttempt.passed ? "Passed" : "Failed"} - {Math.round(completedAttempt.percentage)}%
-                      </Badge>
+                      isResultsPending ? (
+                        <Badge variant="outline">
+                          <Clock className="mr-1 size-3" />
+                          Completed (Results Pending)
+                        </Badge>
+                      ) : (
+                        <Badge
+                          variant={completedAttempt.passed ? "default" : "destructive"}
+                          className={completedAttempt.passed ? "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-400" : ""}
+                        >
+                          <CheckCircle className="mr-1 size-3" />
+                          {completedAttempt.passed ? "Passed" : "Failed"} — {Math.round(completedAttempt.percentage)}%
+                        </Badge>
+                      )
                     ) : inProgressAttempt ? (
                       <Badge variant="secondary">In Progress</Badge>
-                    ) : isOverdue ? (
-                      <Badge variant="destructive">Overdue</Badge>
+                    ) : deadlinePassed ? (
+                      <Badge variant="destructive">Deadline Passed</Badge>
+                    ) : notStartedYet ? (
+                      <Badge variant="outline">Not Open Yet</Badge>
                     ) : (
                       <Badge variant="outline">Not Started</Badge>
                     )}
                   </div>
                 </CardHeader>
-                <CardContent className="flex-1">
-                  <div className="flex items-center gap-4 text-sm text-muted-foreground mb-4">
+
+                <CardContent className="flex-1 space-y-3">
+                  <div className="flex items-center gap-4 text-sm text-muted-foreground">
                     <span className="flex items-center gap-1">
                       <FileQuestion className="size-3.5" />
                       {quiz.question_count} questions
@@ -107,21 +128,46 @@ export default async function InternQuizzesPage() {
                       {quiz.timeLimitMinutes} min
                     </span>
                   </div>
+
                   {quiz.dueDate && !completedAttempt && (
-                    <p className={`text-sm mb-4 ${isOverdue ? "text-destructive" : "text-muted-foreground"}`}>
+                    <p className="text-sm text-muted-foreground">
                       Due {formatDistanceToNow(new Date(quiz.dueDate), { addSuffix: true })}
                     </p>
                   )}
+
+                  {(startsAt || endsAt) && (
+                    <div className="space-y-0.5 text-sm text-muted-foreground">
+                      {startsAt && <p>Opens: {format(startsAt, "PPpp")}</p>}
+                      {endsAt && <p>Closes: {format(endsAt, "PPpp")}</p>}
+                    </div>
+                  )}
+
+                  {!completedAttempt && isUnavailable && (
+                    <Alert>
+                      <AlertTitle>
+                        {deadlinePassed ? "Quiz ended" : "Quiz not open yet"}
+                      </AlertTitle>
+                      <AlertDescription>
+                        {deadlinePassed
+                          ? "The deadline has passed. You can no longer start this quiz."
+                          : "This quiz will open later. Come back after the start time."}
+                      </AlertDescription>
+                    </Alert>
+                  )}
+
                   <p className="text-sm text-muted-foreground">
                     Passing score: {quiz.passingScore}%
                   </p>
                 </CardContent>
+
                 <div className="p-6 pt-0">
                   {completedAttempt ? (
                     <Button variant="outline" className="w-full" asChild>
-                      <Link href={`/intern/history`}>
-                        View Results
-                      </Link>
+                      <Link href="/intern/history">View Results</Link>
+                    </Button>
+                  ) : isUnavailable ? (
+                    <Button className="w-full" disabled variant="secondary">
+                      {deadlinePassed ? "Deadline Passed" : "Not Open Yet"}
                     </Button>
                   ) : (
                     <Button className="w-full" asChild>

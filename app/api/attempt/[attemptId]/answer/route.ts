@@ -16,71 +16,78 @@ export async function POST(
     const { questionId, selectedOptionId } = await request.json()
 
     if (!questionId || !selectedOptionId) {
-      return NextResponse.json({ error: "Question ID and selected option are required" }, { status: 400 })
+      return NextResponse.json({ error: "questionId and selectedOptionId are required" }, { status: 400 })
     }
 
-    // Verify attempt belongs to user and is in progress
-    const attempts = await sql`
-      SELECT id, "quizId", status FROM quiz_attempts
-      WHERE id = ${attemptId}
-      AND "internId" = ${session.user.id}
+    // Verify attempt + get elapsed time and deadline — all from DB
+    const [attempt] = await sql`
+      SELECT
+        qa.id,
+        qa."quizId",
+        qa.status,
+        q."timeLimitMinutes",
+        EXTRACT(EPOCH FROM (NOW() - qa."startedAt"))::int AS elapsed_seconds,
+        asg."endAt",
+        asg."endAt" IS NOT NULL AND NOW() > asg."endAt"    AS deadline_passed
+      FROM quiz_attempts qa
+      JOIN quizzes q ON q.id = qa."quizId"
+      LEFT JOIN quiz_assignments asg
+        ON asg."quizId" = qa."quizId" AND asg."internId" = qa."internId"
+      WHERE qa.id = ${attemptId}
+      AND qa."internId" = ${session.user.id}
     `
 
-    if (attempts.length === 0) {
+    if (!attempt) {
       return NextResponse.json({ error: "Attempt not found" }, { status: 404 })
     }
-
-    const attempt = attempts[0]
-
     if (attempt.status !== "IN_PROGRESS") {
       return NextResponse.json({ error: "Attempt is not in progress" }, { status: 400 })
     }
 
-    // Verify question belongs to this quiz
-    const questions = await sql`
-      SELECT id FROM questions
-      WHERE id = ${questionId}
-      AND "quizId" = ${attempt.quizId}
-    `
+    const timeLimitSeconds = Number(attempt.timeLimitMinutes) * 60
+    const elapsedSeconds = Number(attempt.elapsed_seconds)
 
-    if (questions.length === 0) {
+    // 10s grace for network latency
+    if (elapsedSeconds > timeLimitSeconds + 10 || attempt.deadline_passed) {
+      return NextResponse.json({ error: "Time limit expired" }, { status: 403 })
+    }
+
+    // Verify question belongs to this quiz
+    const [question] = await sql`
+      SELECT id FROM questions WHERE id = ${questionId} AND "quizId" = ${attempt.quizId}
+    `
+    if (!question) {
       return NextResponse.json({ error: "Question not found in this quiz" }, { status: 404 })
     }
 
-    // Get the correct option for this question to check if answer is correct
-    const correctOptions = await sql`
-      SELECT id FROM options
-      WHERE "questionId" = ${questionId}
-      AND "isCorrect" = true
+    // Verify option belongs to this question
+    const [option] = await sql`
+      SELECT id FROM options WHERE id = ${selectedOptionId} AND "questionId" = ${questionId}
     `
-
-    const isCorrect = correctOptions.length > 0 && correctOptions[0].id === selectedOptionId
-
-    // Upsert answer
-    const existingAnswers = await sql`
-      SELECT id FROM answers
-      WHERE "attemptId" = ${attemptId}
-      AND "questionId" = ${questionId}
-    `
-
-    if (existingAnswers.length > 0) {
-      await sql`
-        UPDATE answers
-        SET "selectedOptionId" = ${selectedOptionId}, "isCorrect" = ${isCorrect}, "answeredAt" = NOW()
-        WHERE "attemptId" = ${attemptId}
-        AND "questionId" = ${questionId}
-      `
-    } else {
-      await sql`
-        INSERT INTO answers (id, "attemptId", "questionId", "selectedOptionId", "isCorrect", "answeredAt")
-        VALUES (${generateId()}, ${attemptId}, ${questionId}, ${selectedOptionId}, ${isCorrect}, NOW())
-      `
+    if (!option) {
+      return NextResponse.json({ error: "Invalid option for this question" }, { status: 400 })
     }
 
-    // Don't expose isCorrect to client during exam
+    // Check correctness
+    const [correctOption] = await sql`
+      SELECT id FROM options WHERE "questionId" = ${questionId} AND "isCorrect" = true LIMIT 1
+    `
+    const isCorrect = correctOption?.id === selectedOptionId
+
+    // Upsert — answers table has unique(attemptId, questionId)
+    await sql`
+      INSERT INTO answers (id, "attemptId", "questionId", "selectedOptionId", "isCorrect", "answeredAt")
+      VALUES (${generateId()}, ${attemptId}, ${questionId}, ${selectedOptionId}, ${isCorrect}, NOW())
+      ON CONFLICT ("attemptId", "questionId")
+      DO UPDATE SET
+        "selectedOptionId" = ${selectedOptionId},
+        "isCorrect"        = ${isCorrect},
+        "answeredAt"       = NOW()
+    `
+
     return NextResponse.json({ success: true })
   } catch (error) {
-    console.error("Failed to save answer:", error)
+    console.error("[answer/route]", error)
     return NextResponse.json({ error: "Failed to save answer" }, { status: 500 })
   }
 }

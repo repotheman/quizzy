@@ -1,4 +1,5 @@
 import NextAuth from "next-auth"
+import "next-auth/jwt"
 import Credentials from "next-auth/providers/credentials"
 import { compare } from "bcryptjs"
 import { sql } from "@/lib/db"
@@ -18,7 +19,7 @@ declare module "next-auth" {
   }
 }
 
-declare module "@auth/core/jwt" {
+declare module "next-auth/jwt" {
   interface JWT {
     role: "ADMIN" | "INTERN"
   }
@@ -75,7 +76,9 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     async session({ session, token }) {
       if (session.user) {
         session.user.id = token.sub as string
-        session.user.role = token.role
+        session.user.email = (token.email as string) || session.user.email
+        session.user.name = (token.name as string) || session.user.name
+        session.user.role = token.role as "ADMIN" | "INTERN"
       }
       return session
     }
@@ -86,4 +89,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
   session: {
     strategy: "jwt",
   },
+  trustHost: true,
+  basePath: "/api/auth",
+  secret: process.env.AUTH_SECRET,
 })

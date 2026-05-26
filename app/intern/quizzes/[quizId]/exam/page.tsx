@@ -2,89 +2,7 @@ import { redirect } from "next/navigation"
 import { auth } from "@/lib/auth"
 import { sql } from "@/lib/db"
 import { ExamShell } from "@/components/exam/ExamShell"
-
-async function getAttemptData(attemptId: string, internId: string) {
-  // Get attempt with quiz details
-  const attempts = await sql`
-    SELECT 
-      qa.*,
-      q.title as quiz_title,
-      q."timeLimitMinutes",
-      COALESCE(q."maxViolations", 3) as "maxViolations"
-    FROM quiz_attempts qa
-    JOIN quizzes q ON qa."quizId" = q.id
-    WHERE qa.id = ${attemptId}
-    AND qa."internId" = ${internId}
-  `
-
-  if (attempts.length === 0) return null
-
-  const attempt = attempts[0]
-
-  // Get questions with options
-  const questions = await sql`
-    SELECT 
-      q.id,
-      q.text,
-      q.type,
-      q.points,
-      q."order"
-    FROM questions q
-    WHERE q."quizId" = ${attempt.quizId}
-    ORDER BY q."order" ASC
-  `
-
-  const questionIds = questions.map((q: { id: string }) => q.id)
-  const options = questionIds.length > 0 ? await sql`
-    SELECT id, "questionId", text, "order"
-    FROM options
-    WHERE "questionId" = ANY(${questionIds})
-    ORDER BY "order" ASC
-  ` : []
-
-  // Get existing answers
-  const answers = await sql`
-    SELECT "questionId", "selectedOptionId"
-    FROM answers
-    WHERE "attemptId" = ${attemptId}
-  `
-
-  // Build questions with options
-  const questionsWithOptions = questions.map((q: { id: string; text: string; type: "MCQ" | "TRUE_FALSE"; points: number; order: number }) => ({
-    id: q.id,
-    text: q.text,
-    type: q.type,
-    points: q.points,
-    options: options
-      .filter((o: { questionId: string }) => o.questionId === q.id)
-      .map((o: { id: string; text: string }) => ({ id: o.id, text: o.text })),
-  }))
-
-  // Build answers map
-  const answersMap: Record<string, string> = {}
-  answers.forEach((a: { questionId: string; selectedOptionId: string | null }) => {
-    if (a.selectedOptionId) {
-      answersMap[a.questionId] = a.selectedOptionId
-    }
-  })
-
-  return {
-    attempt: {
-      id: attempt.id,
-      quizId: attempt.quizId,
-      status: attempt.status,
-      violations: attempt.violations || 0,
-      startedAt: attempt.startedAt,
-    },
-    quiz: {
-      title: attempt.quiz_title,
-      timeLimitMinutes: attempt.timeLimitMinutes,
-      maxViolations: attempt.maxViolations,
-    },
-    questions: questionsWithOptions,
-    answers: answersMap,
-  }
-}
+import { finalizeAttempt } from "@/lib/attempts"
 
 export default async function ExamPage({
   params,
@@ -101,31 +19,111 @@ export default async function ExamPage({
   const { quizId } = await params
   const { attemptId } = await searchParams
 
-  if (!attemptId) {
-    redirect(`/intern/quizzes/${quizId}`)
-  }
+  if (!attemptId) redirect(`/intern/quizzes/${quizId}`)
 
-  const data = await getAttemptData(attemptId, session.user.id)
+  // Load attempt + quiz + DB-side elapsed in one query
+  const [row] = await sql`
+    SELECT
+      qa.id                                                          AS "attemptId",
+      qa."quizId",
+      qa.status,
+      qa.violations,
+      q.title                                                        AS "quizTitle",
+      q."timeLimitMinutes",
+      q."maxViolations",
+      EXTRACT(EPOCH FROM (NOW() - qa."startedAt"))::int              AS elapsed_seconds,
+      (q."timeLimitMinutes" * 60)
+        - EXTRACT(EPOCH FROM (NOW() - qa."startedAt"))::int          AS remaining_seconds
+    FROM quiz_attempts qa
+    JOIN quizzes q ON q.id = qa."quizId"
+    WHERE qa.id = ${attemptId}
+    AND qa."internId" = ${session.user.id}
+  `
 
-  if (!data) {
-    redirect(`/intern/quizzes/${quizId}`)
-  }
+  if (!row) redirect(`/intern/quizzes/${quizId}`)
+  if (row.status !== "IN_PROGRESS") redirect("/intern/history")
 
-  if (data.attempt.status !== "IN_PROGRESS") {
+  // Check assignment deadline using DB time
+  const [assignment] = await sql`
+    SELECT
+      "endAt",
+      CASE WHEN "endAt" IS NOT NULL THEN EXTRACT(EPOCH FROM ("endAt" - NOW()))::int ELSE NULL END AS deadline_remaining
+    FROM quiz_assignments
+    WHERE "quizId" = ${row.quizId}
+    AND "internId" = ${session.user.id}
+    LIMIT 1
+  `
+
+  const deadlineRemaining: number | null = assignment?.deadline_remaining != null
+    ? Number(assignment.deadline_remaining)
+    : null
+
+  // If deadline already passed, finalize and redirect
+  if (deadlineRemaining !== null && deadlineRemaining <= 0) {
+    await finalizeAttempt({ attemptId, internId: session.user.id, autoSubmit: true, reason: "TIMED_OUT" })
     redirect("/intern/history")
   }
 
+  const timeLimitRemaining = Math.max(0, Number(row.remaining_seconds))
+  const initialSeconds = deadlineRemaining === null
+    ? timeLimitRemaining
+    : Math.min(timeLimitRemaining, Math.max(0, deadlineRemaining))
+
+  // Already expired — finalize and redirect
+  if (initialSeconds <= 0) {
+    await finalizeAttempt({ attemptId, internId: session.user.id, autoSubmit: true, reason: "TIMED_OUT" })
+    redirect("/intern/history")
+  }
+
+  // Load questions + options
+  const questions = await sql`
+    SELECT id, text, type, points, "order"
+    FROM questions
+    WHERE "quizId" = ${row.quizId}
+    ORDER BY "order" ASC
+  ` as { id: string; text: string; type: "MCQ" | "TRUE_FALSE"; points: number; order: number }[]
+
+  const questionIds = questions.map(q => q.id)
+  const options = questionIds.length > 0
+    ? await sql`
+        SELECT id, "questionId", text, "order"
+        FROM options
+        WHERE "questionId" = ANY(${questionIds})
+        ORDER BY "order" ASC
+      ` as { id: string; questionId: string; text: string; order: number }[]
+    : []
+
+  const answerRows = await sql`
+    SELECT "questionId", "selectedOptionId"
+    FROM answers
+    WHERE "attemptId" = ${attemptId}
+  ` as { questionId: string; selectedOptionId: string | null }[]
+
+  const existingAnswers: Record<string, string> = {}
+  for (const a of answerRows) {
+    if (a.selectedOptionId) existingAnswers[a.questionId] = a.selectedOptionId
+  }
+
+  const questionsWithOptions = questions.map(q => ({
+    id: q.id,
+    text: q.text,
+    type: q.type,
+    points: q.points,
+    options: options
+      .filter(o => o.questionId === q.id)
+      .map(o => ({ id: o.id, text: o.text })),
+  }))
+
   return (
     <ExamShell
-      attemptId={data.attempt.id}
-      quizId={data.attempt.quizId}
-      quizTitle={data.quiz.title}
-      timeLimitMinutes={data.quiz.timeLimitMinutes}
-      maxViolations={data.quiz.maxViolations}
-      startedAt={data.attempt.startedAt}
-      initialViolations={data.attempt.violations}
-      questions={data.questions}
-      existingAnswers={data.answers}
+      attemptId={attemptId}
+      quizTitle={row.quizTitle}
+      timeLimitMinutes={Number(row.timeLimitMinutes)}
+      initialSeconds={initialSeconds}
+      maxViolations={Number(row.maxViolations)}
+      initialViolations={Number(row.violations) || 0}
+      questions={questionsWithOptions}
+      existingAnswers={existingAnswers}
     />
   )
 }

@@ -1,71 +1,59 @@
 "use client"
 
-import { useEffect, useRef, useCallback } from "react"
+import { useEffect, useRef } from "react"
 
 interface UseTimerOptions {
   initialSeconds: number
   onTick?: (seconds: number) => void
   onExpire?: () => void
-  autoStart?: boolean
 }
 
-export function useTimer({
-  initialSeconds,
-  onTick,
-  onExpire,
-  autoStart = true,
-}: UseTimerOptions) {
-  const timerRef = useRef<NodeJS.Timeout | null>(null)
-  const secondsRef = useRef(initialSeconds)
-  const isRunningRef = useRef(false)
+/**
+ * Countdown timer anchored to wall-clock time.
+ * initialSeconds is fixed at mount — changing the prop has no effect.
+ */
+export function useTimer({ initialSeconds, onTick, onExpire }: UseTimerOptions) {
+  const onTickRef   = useRef(onTick)
+  const onExpireRef = useRef(onExpire)
+  const firedRef    = useRef(false)
 
-  const stop = useCallback(() => {
-    if (timerRef.current) {
-      clearInterval(timerRef.current)
-      timerRef.current = null
-    }
-    isRunningRef.current = false
-  }, [])
-
-  const start = useCallback(() => {
-    if (isRunningRef.current) return
-    isRunningRef.current = true
-
-    timerRef.current = setInterval(() => {
-      secondsRef.current -= 1
-      onTick?.(secondsRef.current)
-
-      if (secondsRef.current <= 0) {
-        stop()
-        onExpire?.()
-      }
-    }, 1000)
-  }, [onTick, onExpire, stop])
-
-  const reset = useCallback((newSeconds: number) => {
-    stop()
-    secondsRef.current = newSeconds
-    onTick?.(newSeconds)
-  }, [stop, onTick])
+  useEffect(() => { onTickRef.current   = onTick   }, [onTick])
+  useEffect(() => { onExpireRef.current = onExpire }, [onExpire])
 
   useEffect(() => {
-    secondsRef.current = initialSeconds
-    if (autoStart && initialSeconds > 0) {
-      start()
+    if (initialSeconds <= 0) {
+      onTickRef.current?.(0)
+      if (!firedRef.current) {
+        firedRef.current = true
+        onExpireRef.current?.()
+      }
+      return
     }
-    return () => stop()
-  }, [initialSeconds, autoStart, start, stop])
 
-  return {
-    start,
-    stop,
-    reset,
-    getSeconds: () => secondsRef.current,
-  }
+    const startWall = performance.now()
+
+    const tick = () => {
+      const elapsed   = Math.floor((performance.now() - startWall) / 1000)
+      const remaining = Math.max(0, initialSeconds - elapsed)
+      onTickRef.current?.(remaining)
+      if (remaining <= 0 && !firedRef.current) {
+        firedRef.current = true
+        clearInterval(id)
+        onExpireRef.current?.()
+      }
+    }
+
+    const id = setInterval(tick, 1000)
+    tick() // fire immediately so UI shows correct value on mount
+
+    return () => clearInterval(id)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []) // intentionally empty — timer is fixed at mount
 }
 
 export function formatTime(seconds: number): string {
-  const mins = Math.floor(seconds / 60)
-  const secs = seconds % 60
-  return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`
+  const s    = Math.max(0, seconds)
+  const mins = Math.floor(s / 60)
+  const secs = s % 60
+  return `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`
 }

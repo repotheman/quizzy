@@ -58,7 +58,7 @@ export async function PATCH(
         "passingScore" = ${passingScore ?? existingQuiz.passingScore},
         "shuffleQuestions" = ${shuffleQuestions ?? existingQuiz.shuffleQuestions},
         "isPublished" = ${isPublished ?? existingQuiz.isPublished},
-        "updatedAt" = CURRENT_TIMESTAMP
+        "updatedAt" = NOW()
       WHERE id = ${quizId}
     `
 

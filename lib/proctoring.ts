@@ -111,21 +111,24 @@ export function useProctoring({
 
     // Prevent keyboard shortcuts
     const handleKeyDown = (e: KeyboardEvent) => {
+      const isMac = navigator.userAgent.includes("Mac")
+      const modifierKey = isMac ? e.metaKey : e.ctrlKey
+
       // Prevent F12, Ctrl+Shift+I, Ctrl+Shift+J, Ctrl+U
       if (
         e.key === 'F12' ||
-        (e.ctrlKey && e.shiftKey && (e.key === 'I' || e.key === 'J' || e.key === 'C')) ||
-        (e.ctrlKey && e.key === 'u') ||
-        (e.ctrlKey && e.key === 'c') ||
-        (e.ctrlKey && e.key === 'v') ||
-        (e.ctrlKey && e.key === 'a')
+        (modifierKey && e.shiftKey && (e.key === 'I' || e.key === 'J' || e.key === 'C')) ||
+        (modifierKey && e.key === 'u') ||
+        (modifierKey && e.key === 'c') ||
+        (modifierKey && e.key === 'v') ||
+        (modifierKey && e.key === 'a')
       ) {
         e.preventDefault()
-        if (e.key === 'F12' || (e.ctrlKey && e.shiftKey)) {
+        if (e.key === 'F12' || (modifierKey && e.shiftKey)) {
           recordViolation('DEVTOOLS_OPEN', 'User attempted to open developer tools via keyboard shortcut')
-        } else if (e.ctrlKey && e.key === 'c') {
+        } else if (modifierKey && e.key === 'c') {
           recordViolation('COPY_ATTEMPT', 'User attempted to copy using keyboard shortcut')
-        } else if (e.ctrlKey && e.key === 'v') {
+        } else if (modifierKey && e.key === 'v') {
           recordViolation('PASTE_ATTEMPT', 'User attempted to paste using keyboard shortcut')
         }
       }

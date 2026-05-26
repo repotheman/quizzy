@@ -6,8 +6,8 @@ import { FileQuestion, Users, ClipboardCheck, TrendingUp } from "lucide-react"
 async function getAdminStats() {
   const [quizCount] = await sql`SELECT COUNT(*) as count FROM quizzes`
   const [internCount] = await sql`SELECT COUNT(*) as count FROM users WHERE role = 'INTERN'`
-  const [attemptCount] = await sql`SELECT COUNT(*) as count FROM quiz_attempts WHERE status = 'SUBMITTED'`
-  const [avgScore] = await sql`SELECT COALESCE(AVG(percentage), 0) as avg FROM quiz_attempts WHERE status = 'SUBMITTED'`
+  const [attemptCount] = await sql`SELECT COUNT(*) as count FROM quiz_attempts WHERE status != 'IN_PROGRESS'`
+  const [avgScore] = await sql`SELECT COALESCE(AVG(percentage), 0) as avg FROM quiz_attempts WHERE status != 'IN_PROGRESS'`
   
   return {
     totalQuizzes: Number(quizCount.count),
@@ -127,13 +127,14 @@ export default async function AdminDashboard() {
                     </p>
                   </div>
                   <div className="text-right">
-                    {activity.status === "SUBMITTED" ? (
+                    {activity.status !== "IN_PROGRESS" ? (
                       <>
                         <p className={`text-sm font-medium ${activity.passed ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}>
                           {activity.percentage}%
                         </p>
                         <p className="text-xs text-muted-foreground">
                           {activity.passed ? "Passed" : "Failed"}
+                          {activity.status !== "SUBMITTED" ? ` (${activity.status.toLowerCase().replace("_", " ")})` : ""}
                         </p>
                       </>
                     ) : (

@@ -18,7 +18,7 @@ async function getInterns() {
     SELECT 
       u.*,
       (SELECT COUNT(*) FROM quiz_assignments WHERE "internId" = u.id) as assignments_count,
-      (SELECT COUNT(*) FROM quiz_attempts WHERE "internId" = u.id AND status = 'SUBMITTED') as completed_count
+      (SELECT COUNT(*) FROM quiz_attempts WHERE "internId" = u.id AND status != 'IN_PROGRESS') as completed_count
     FROM users u
     WHERE u.role = 'INTERN'
     ORDER BY u."createdAt" DESC
@@ -27,9 +27,9 @@ async function getInterns() {
 }
 
 async function getPublishedQuizzes() {
-  const quizzes = await sql`
+  const quizzes = (await sql`
     SELECT id, title FROM quizzes WHERE "isPublished" = true ORDER BY title ASC
-  `
+  `) as { id: string; title: string }[]
   return quizzes
 }
 

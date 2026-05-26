@@ -13,13 +13,16 @@ async function getInternStats(internId: string) {
     SELECT COUNT(*) as count FROM quiz_assignments WHERE "internId" = ${internId}
   `
   const [completedCount] = await sql`
-    SELECT COUNT(*) as count FROM quiz_attempts WHERE "internId" = ${internId} AND status = 'SUBMITTED'
+    SELECT COUNT(*) as count FROM quiz_attempts WHERE "internId" = ${internId} AND status != 'IN_PROGRESS'
   `
+  // Use DB NOW() to avoid server clock skew
   const [passedCount] = await sql`
-    SELECT COUNT(*) as count FROM quiz_attempts WHERE "internId" = ${internId} AND status = 'SUBMITTED' AND passed = true
+    SELECT COUNT(*) as count FROM quiz_attempts
+    WHERE "internId" = ${internId} AND status != 'IN_PROGRESS' AND passed = true
   `
   const [avgScore] = await sql`
-    SELECT COALESCE(AVG(percentage), 0) as avg FROM quiz_attempts WHERE "internId" = ${internId} AND status = 'SUBMITTED'
+    SELECT COALESCE(AVG(percentage), 0) as avg FROM quiz_attempts
+    WHERE "internId" = ${internId} AND status != 'IN_PROGRESS'
   `
 
   return {
@@ -44,9 +47,10 @@ async function getPendingQuizzes(internId: string) {
     FROM quiz_assignments qa
     JOIN quizzes q ON qa."quizId" = q.id
     WHERE qa."internId" = ${internId}
+    AND q."isPublished" = true
     AND NOT EXISTS (
       SELECT 1 FROM quiz_attempts 
-      WHERE "quizId" = q.id AND "internId" = ${internId} AND status = 'SUBMITTED'
+      WHERE "quizId" = q.id AND "internId" = ${internId} AND status != 'IN_PROGRESS'
     )
     ORDER BY qa."dueDate" ASC NULLS LAST
     LIMIT 3

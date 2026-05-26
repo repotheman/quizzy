@@ -171,6 +171,10 @@ export function QuizForm({ initialData, mode }: QuizFormProps) {
               />
             </div>
 
+            <p className="text-sm text-muted-foreground">
+              💡 After creating the quiz, you can add questions manually or import them in bulk via JSON/CSV. When you publish the quiz, you&apos;ll be able to assign it to interns.
+            </p>
+
             <div className="flex justify-end gap-4">
               <Button type="button" variant="outline" asChild>
                 <Link href="/admin/quizzes">Cancel</Link>

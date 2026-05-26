@@ -2,20 +2,26 @@
 
 import { useState } from "react"
 import { useRouter } from "next/navigation"
+import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Label } from "@/components/ui/label"
+import { Loader2 } from "lucide-react"
 
 interface StartExamButtonProps {
   quizId: string
   hasInProgressAttempt: boolean
   attemptId?: string
+  isLocked?: boolean
+  unavailableReason?: string
 }
 
 export function StartExamButton({
   quizId,
   hasInProgressAttempt,
   attemptId,
+  isLocked = false,
+  unavailableReason,
 }: StartExamButtonProps) {
   const router = useRouter()
   const [agreed, setAgreed] = useState(false)
@@ -24,8 +30,22 @@ export function StartExamButton({
   const handleStart = async () => {
     setIsLoading(true)
     try {
+      // Enter fullscreen before navigating — the click counts as a user gesture
+      try {
+        if (!document.fullscreenElement) {
+          await document.documentElement.requestFullscreen()
+        }
+      } catch {
+        // Fullscreen may be blocked; the exam page overlay handles this
+      }
+
       if (hasInProgressAttempt && attemptId) {
         router.push(`/intern/quizzes/${quizId}/exam?attemptId=${attemptId}`)
+        return
+      }
+
+      if (isLocked) {
+        setIsLoading(false)
         return
       }
 
@@ -36,14 +56,28 @@ export function StartExamButton({
       })
 
       if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || "Failed to start exam")
+        const error = await response.json().catch(() => ({}))
+        toast.error(error.error || "Failed to start exam")
+        if (document.fullscreenElement) await document.exitFullscreen().catch(() => {})
+        setIsLoading(false)
+        return
       }
 
-      const { attemptId: newAttemptId } = await response.json()
+      const { attemptId: newAttemptId, status } = await response.json()
+
+      if (status && status !== "IN_PROGRESS") {
+        toast.error("You have already completed this quiz.", {
+          description: "Open your history page to review the result.",
+        })
+        if (document.fullscreenElement) await document.exitFullscreen().catch(() => {})
+        router.push("/intern/history")
+        return
+      }
+
       router.push(`/intern/quizzes/${quizId}/exam?attemptId=${newAttemptId}`)
     } catch (error) {
-      console.error("Failed to start exam:", error)
+      toast.error(error instanceof Error ? error.message : "Failed to start exam")
+      if (document.fullscreenElement) await document.exitFullscreen().catch(() => {})
       setIsLoading(false)
     }
   }
@@ -64,15 +98,27 @@ export function StartExamButton({
       <Button
         className="w-full"
         size="lg"
-        disabled={!agreed || isLoading}
+        disabled={!agreed || isLoading || (isLocked && !hasInProgressAttempt)}
         onClick={handleStart}
+        title={isLocked ? unavailableReason || "This quiz is unavailable" : undefined}
       >
-        {isLoading
-          ? "Starting..."
-          : hasInProgressAttempt
-          ? "Continue Exam"
-          : "Enter Exam"}
+        {isLoading ? (
+          <>
+            <Loader2 className="mr-2 size-4 animate-spin" />
+            Starting...
+          </>
+        ) : hasInProgressAttempt ? (
+          "Continue Exam"
+        ) : isLocked ? (
+          "Unavailable"
+        ) : (
+          "Enter Exam"
+        )}
       </Button>
+
+      {isLocked && unavailableReason && (
+        <p className="text-sm text-muted-foreground">{unavailableReason}</p>
+      )}
     </div>
   )
 }

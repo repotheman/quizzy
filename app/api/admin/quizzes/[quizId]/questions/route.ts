@@ -7,33 +7,24 @@ export async function GET(
   { params }: { params: Promise<{ quizId: string }> }
 ) {
   const session = await auth()
-  
   if (!session || session.user.role !== "ADMIN") {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
   const { quizId } = await params
 
-  // Verify quiz ownership
-  const [quiz] = await sql`
-    SELECT id FROM quizzes WHERE id = ${quizId} AND "createdById" = ${session.user.id}
-  `
-
-  if (!quiz) {
-    return NextResponse.json({ error: "Quiz not found" }, { status: 404 })
-  }
+  const [quiz] = await sql`SELECT id FROM quizzes WHERE id = ${quizId}`
+  if (!quiz) return NextResponse.json({ error: "Quiz not found" }, { status: 404 })
 
   const questions = await sql`
     SELECT * FROM questions WHERE "quizId" = ${quizId} ORDER BY "order" ASC
   `
-
-  // Get options for each question
   const questionsWithOptions = await Promise.all(
-    questions.map(async (question) => {
+    questions.map(async (q) => {
       const options = await sql`
-        SELECT * FROM options WHERE "questionId" = ${question.id} ORDER BY "order" ASC
+        SELECT * FROM options WHERE "questionId" = ${q.id} ORDER BY "order" ASC
       `
-      return { ...question, options }
+      return { ...q, options }
     })
   )
 
@@ -45,7 +36,6 @@ export async function POST(
   { params }: { params: Promise<{ quizId: string }> }
 ) {
   const session = await auth()
-  
   if (!session || session.user.role !== "ADMIN") {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
@@ -53,47 +43,40 @@ export async function POST(
   const { quizId } = await params
 
   try {
-    // Verify quiz ownership
-    const [quiz] = await sql`
-      SELECT id FROM quizzes WHERE id = ${quizId} AND "createdById" = ${session.user.id}
-    `
-
-    if (!quiz) {
-      return NextResponse.json({ error: "Quiz not found" }, { status: 404 })
-    }
+    const [quiz] = await sql`SELECT id FROM quizzes WHERE id = ${quizId}`
+    if (!quiz) return NextResponse.json({ error: "Quiz not found" }, { status: 404 })
 
     const { type, text, points, options } = await request.json()
 
-    if (!type || !text || !options || options.length < 2) {
-      return NextResponse.json({ error: "Missing required fields" }, { status: 400 })
+    if (!type || !text?.trim()) {
+      return NextResponse.json({ error: "type and text are required" }, { status: 400 })
+    }
+    if (!Array.isArray(options) || options.length < 2) {
+      return NextResponse.json({ error: "At least 2 options are required" }, { status: 400 })
+    }
+    if (!options.some((o: { isCorrect: boolean }) => o.isCorrect)) {
+      return NextResponse.json({ error: "At least one option must be marked correct" }, { status: 400 })
     }
 
-    // Get the next order number
     const [{ max_order }] = await sql`
-      SELECT COALESCE(MAX("order"), 0) as max_order FROM questions WHERE "quizId" = ${quizId}
+      SELECT COALESCE(MAX("order"), 0) AS max_order FROM questions WHERE "quizId" = ${quizId}
     `
-
     const questionId = generateId()
-    const nextOrder = Number(max_order) + 1
 
     await sql`
       INSERT INTO questions (id, "quizId", type, text, points, "order")
-      VALUES (${questionId}, ${quizId}, ${type}, ${text}, ${points || 1}, ${nextOrder})
+      VALUES (${questionId}, ${quizId}, ${type}, ${text.trim()}, ${Number(points) || 1}, ${Number(max_order) + 1})
     `
-
-    // Insert options
     for (let i = 0; i < options.length; i++) {
-      const option = options[i]
-      const optionId = generateId()
       await sql`
         INSERT INTO options (id, "questionId", text, "isCorrect", "order")
-        VALUES (${optionId}, ${questionId}, ${option.text}, ${option.isCorrect || false}, ${i + 1})
+        VALUES (${generateId()}, ${questionId}, ${options[i].text}, ${options[i].isCorrect || false}, ${i + 1})
       `
     }
 
-    return NextResponse.json({ id: questionId, message: "Question created successfully" }, { status: 201 })
+    return NextResponse.json({ id: questionId }, { status: 201 })
   } catch (error) {
-    console.error("Create question error:", error)
+    console.error("[POST questions]", error)
     return NextResponse.json({ error: "Failed to create question" }, { status: 500 })
   }
 }

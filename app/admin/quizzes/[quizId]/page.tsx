@@ -5,7 +5,7 @@ import { sql } from "@/lib/db"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { ArrowLeft, Pencil, Clock, Target, Check, X } from "lucide-react"
+import { ArrowLeft, Pencil, Clock, Target, Check, X, Radio } from "lucide-react"
 
 async function getQuizWithQuestions(quizId: string, adminId: string) {
   const [quiz] = (await sql`
@@ -62,12 +62,20 @@ export default async function ViewQuizPage({ params }: { params: Promise<{ quizI
             )}
           </div>
         </div>
-        <Button asChild>
-          <Link href={`/admin/quizzes/${quiz.id}/edit`}>
-            <Pencil className="mr-2 size-4" />
-            Edit Quiz
-          </Link>
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" asChild>
+            <Link href={`/admin/quizzes/${quiz.id}/attendance`}>
+              <Radio className="mr-2 size-4" />
+              Live Attendance
+            </Link>
+          </Button>
+          <Button asChild>
+            <Link href={`/admin/quizzes/${quiz.id}/edit`}>
+              <Pencil className="mr-2 size-4" />
+              Edit Quiz
+            </Link>
+          </Button>
+        </div>
       </div>
 
       <div className="grid gap-4 md:grid-cols-4">

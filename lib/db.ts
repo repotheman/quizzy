@@ -99,6 +99,8 @@ export interface QuizAttempt {
   startedAt: Date
   submittedAt: Date | null
   timeSpentSeconds: number | null
+  scoreOverriddenAt: Date | null  // non-null when score was manually adjusted by an admin
+  scoreOverriddenBy: string | null // adminId of the user who applied the override
 }
 
 export interface Answer {
@@ -116,4 +118,14 @@ export interface Violation {
   attemptId: string
   type: ViolationType
   timestamp: Date
+}
+
+export interface AdminAuditLog {
+  id: string
+  adminId: string
+  action: string   // 'ADMIN_TERMINATED' | 'SCORE_OVERRIDE' | 'RESULTS_UNPUBLISHED'
+  targetType: string  // 'attempt' | 'quiz'
+  targetId: string
+  metadata: Record<string, unknown>
+  createdAt: Date
 }

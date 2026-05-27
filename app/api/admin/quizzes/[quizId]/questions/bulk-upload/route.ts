@@ -233,8 +233,8 @@ export async function POST(
       const questionId = generateId()
 
       await sql`
-        INSERT INTO questions (id, "quizId", type, text, points, "order")
-        VALUES (${questionId}, ${quizId}, ${q.type}, ${q.text}, ${q.points}, ${nextOrder})
+        INSERT INTO questions (id, "quizId", type, text, points, "order", "updatedAt")
+        VALUES (${questionId}, ${quizId}, ${q.type}, ${q.text}, ${q.points}, ${nextOrder}, NOW())
       `
 
       for (let j = 0; j < q.options.length; j++) {

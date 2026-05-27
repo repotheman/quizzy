@@ -64,8 +64,8 @@ export async function POST(
     const questionId = generateId()
 
     await sql`
-      INSERT INTO questions (id, "quizId", type, text, points, "order")
-      VALUES (${questionId}, ${quizId}, ${type}, ${text.trim()}, ${Number(points) || 1}, ${Number(max_order) + 1})
+      INSERT INTO questions (id, "quizId", type, text, points, "order", "updatedAt")
+      VALUES (${questionId}, ${quizId}, ${type}, ${text.trim()}, ${Number(points) || 1}, ${Number(max_order) + 1}, NOW())
     `
     for (let i = 0; i < options.length; i++) {
       await sql`

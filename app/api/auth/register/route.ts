@@ -46,8 +46,8 @@ export async function POST(request: Request) {
     // Create user
     const id = generateId()
     await sql`
-      INSERT INTO users (id, email, password, name, role)
-      VALUES (${id}, ${email}, ${hashedPassword}, ${name}, ${role})
+      INSERT INTO users (id, email, password, name, role, "updatedAt")
+      VALUES (${id}, ${email}, ${hashedPassword}, ${name}, ${role}, NOW())
     `
 
     return NextResponse.json(

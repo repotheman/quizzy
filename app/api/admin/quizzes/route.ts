@@ -33,7 +33,7 @@ export async function POST(request: Request) {
 
     const id = generateId()
     await sql`
-      INSERT INTO quizzes (id, title, description, "timeLimitMinutes", "passingScore", "shuffleQuestions", "createdById")
+      INSERT INTO quizzes (id, title, description, "timeLimitMinutes", "passingScore", "shuffleQuestions", "createdById", "updatedAt")
       VALUES (
         ${id},
         ${title},
@@ -41,7 +41,8 @@ export async function POST(request: Request) {
         ${Number(timeLimitMinutes)},
         ${Number(passingScore) || 70},
         ${shuffleQuestions || false},
-        ${session.user.id}
+        ${session.user.id},
+        NOW()
       )
     `
 

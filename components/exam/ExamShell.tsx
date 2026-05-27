@@ -65,12 +65,25 @@ export function ExamShell({
   const isSubmittingRef = useRef(false)
 
   // ── Auto-recover fullscreen on mount ─────────────────────────────────────
+  // Next.js page transitions can drop fullscreen. We attempt to re-enter it
+  // immediately on mount, then retry once after a short delay to handle the
+  // case where the browser needs a moment after navigation settles.
   useEffect(() => {
-    if (!document.fullscreenElement) {
-      document.documentElement.requestFullscreen().catch(() => {
-        // overlay will prompt the user
-      })
+    let retryTimer: ReturnType<typeof setTimeout>
+
+    const tryFullscreen = () => {
+      if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().catch(() => {
+          // Blocked — the overlay will prompt the user to click
+        })
+      }
     }
+
+    tryFullscreen()
+    // Retry after 800ms in case the first attempt was too early
+    retryTimer = setTimeout(tryFullscreen, 800)
+
+    return () => clearTimeout(retryTimer)
   }, [])
 
   // ── Submit handler ────────────────────────────────────────────────────────

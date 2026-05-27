@@ -30,16 +30,10 @@ export function StartExamButton({
   const handleStart = async () => {
     setIsLoading(true)
     try {
-      // Enter fullscreen before navigating — the click counts as a user gesture
-      try {
-        if (!document.fullscreenElement) {
-          await document.documentElement.requestFullscreen()
-        }
-      } catch {
-        // Fullscreen may be blocked; the exam page overlay handles this
-      }
-
       if (hasInProgressAttempt && attemptId) {
+        // Resuming — request fullscreen now (user gesture), then navigate.
+        // ExamShell will re-request on mount if it drops during navigation.
+        try { await document.documentElement.requestFullscreen() } catch { /* handled by ExamShell overlay */ }
         router.push(`/intern/quizzes/${quizId}/exam?attemptId=${attemptId}`)
         return
       }
@@ -58,7 +52,6 @@ export function StartExamButton({
       if (!response.ok) {
         const error = await response.json().catch(() => ({}))
         toast.error(error.error || "Failed to start exam")
-        if (document.fullscreenElement) await document.exitFullscreen().catch(() => {})
         setIsLoading(false)
         return
       }
@@ -69,15 +62,17 @@ export function StartExamButton({
         toast.error("You have already completed this quiz.", {
           description: "Open your history page to review the result.",
         })
-        if (document.fullscreenElement) await document.exitFullscreen().catch(() => {})
         router.push("/intern/history")
         return
       }
 
+      // Request fullscreen after the attempt is created (still within the
+      // same user-gesture call stack on most browsers).
+      try { await document.documentElement.requestFullscreen() } catch { /* handled by ExamShell overlay */ }
+
       router.push(`/intern/quizzes/${quizId}/exam?attemptId=${newAttemptId}`)
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to start exam")
-      if (document.fullscreenElement) await document.exitFullscreen().catch(() => {})
       setIsLoading(false)
     }
   }

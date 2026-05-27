@@ -1,171 +1,304 @@
 import { sql } from "@/lib/db"
+import { auth } from "@/lib/auth"
+import { redirect } from "next/navigation"
+import Link from "next/link"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { 
-  Table, 
-  TableBody, 
-  TableCell, 
-  TableHead, 
-  TableHeader, 
-  TableRow 
-} from "@/components/ui/table"
-import { ClipboardList, Clock, Target, AlertTriangle, CheckCircle, XCircle } from "lucide-react"
-import { format } from "date-fns"
-import Link from "next/link"
 import { Button } from "@/components/ui/button"
+import { Progress } from "@/components/ui/progress"
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import {
+  ClipboardList,
+  Clock,
+  Target,
+  AlertTriangle,
+  CheckCircle,
+  XCircle,
+  Users,
+  TrendingUp,
+  Award,
+} from "lucide-react"
+import { format } from "date-fns"
 
-async function getResults() {
+async function getQuizzes() {
+  return sql`
+    SELECT id, title FROM quizzes WHERE "isPublished" = true ORDER BY "createdAt" DESC
+  `
+}
+
+async function getResults(quizId?: string) {
   const results = await sql`
-    SELECT 
-      qa.*,
-      u.name as intern_name,
-      u.email as intern_email,
-      q.title as quiz_title,
-      q."passingScore" as passing_score,
-      (SELECT COUNT(*) FROM violations WHERE "attemptId" = qa.id) as violation_count
+    SELECT
+      qa.id,
+      qa.status,
+      qa.score,
+      qa."totalPoints",
+      qa.percentage,
+      qa.passed,
+      qa.rank,
+      qa.violations,
+      qa."timeSpentSeconds",
+      qa."startedAt",
+      qa."submittedAt",
+      qa."scoreOverriddenAt",
+      u.name  AS intern_name,
+      u.email AS intern_email,
+      q.id    AS quiz_id,
+      q.title AS quiz_title,
+      q."passingScore" AS passing_score,
+      (SELECT COUNT(*) FROM violations WHERE "attemptId" = qa.id) AS violation_count
     FROM quiz_attempts qa
     JOIN users u ON qa."internId" = u.id
     JOIN quizzes q ON qa."quizId" = q.id
+    WHERE (${quizId ?? null}::text IS NULL OR qa."quizId" = ${quizId ?? null})
     ORDER BY qa."startedAt" DESC
   `
   return results
 }
 
-function getStatusBadge(status: string, passed: boolean | null) {
-  switch (status) {
-    case "SUBMITTED":
-      return passed ? (
-        <Badge className="bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300">
-          <CheckCircle className="mr-1 size-3" />
-          Passed
-        </Badge>
-      ) : (
-        <Badge className="bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300">
-          <XCircle className="mr-1 size-3" />
-          Failed
-        </Badge>
-      )
-    case "IN_PROGRESS":
-      return (
-        <Badge variant="secondary">
-          <Clock className="mr-1 size-3" />
-          In Progress
-        </Badge>
-      )
-    case "TIMED_OUT":
-      return (
-        <Badge variant="destructive">
-          <Clock className="mr-1 size-3" />
-          Timed Out
-        </Badge>
-      )
-    case "TERMINATED":
-      return (
-        <Badge variant="destructive">
-          <AlertTriangle className="mr-1 size-3" />
-          Terminated
-        </Badge>
-      )
-    default:
-      return <Badge variant="outline">{status}</Badge>
-  }
+async function getQuizStats(quizId: string) {
+  const [stats] = await sql`
+    SELECT
+      COUNT(*)                                                          AS total,
+      COUNT(*) FILTER (WHERE status != 'IN_PROGRESS')                  AS completed,
+      COUNT(*) FILTER (WHERE passed = true)                            AS passed,
+      COALESCE(AVG(percentage) FILTER (WHERE status != 'IN_PROGRESS'), 0) AS avg_pct,
+      COALESCE(MAX(percentage) FILTER (WHERE status != 'IN_PROGRESS'), 0) AS max_pct,
+      COALESCE(MIN(percentage) FILTER (WHERE status != 'IN_PROGRESS'), 0) AS min_pct
+    FROM quiz_attempts
+    WHERE "quizId" = ${quizId}
+  `
+  return stats
 }
 
-export default async function ResultsPage() {
-  const results = await getResults()
+function StatusBadge({ status, passed }: { status: string; passed: boolean | null }) {
+  if (status === "IN_PROGRESS")
+    return <Badge variant="secondary"><Clock className="mr-1 size-3" />In Progress</Badge>
+  if (status === "TIMED_OUT")
+    return <Badge variant="destructive"><Clock className="mr-1 size-3" />Timed Out</Badge>
+  if (status === "TERMINATED")
+    return <Badge variant="destructive"><AlertTriangle className="mr-1 size-3" />Terminated</Badge>
+  if (passed)
+    return <Badge className="bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300"><CheckCircle className="mr-1 size-3" />Passed</Badge>
+  return <Badge className="bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300"><XCircle className="mr-1 size-3" />Failed</Badge>
+}
+
+export default async function ResultsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ quizId?: string }>
+}) {
+  const session = await auth()
+  if (!session?.user || session.user.role !== "ADMIN") redirect("/login")
+
+  const { quizId } = await searchParams
+  const [quizzes, results] = await Promise.all([getQuizzes(), getResults(quizId)])
+  const stats = quizId ? await getQuizStats(quizId) : null
+
+  const selectedQuiz = quizzes.find((q) => q.id === quizId)
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">Results</h1>
-        <p className="text-muted-foreground">
-          View all quiz attempt results and proctoring data
-        </p>
+      {/* Header */}
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Results</h1>
+          <p className="text-muted-foreground">
+            Quiz attempt results and per-student analysis
+          </p>
+        </div>
+
+        {/* Quiz filter */}
+        <form method="GET" className="flex items-center gap-2">
+          <Select name="quizId" defaultValue={quizId ?? "all"}>
+            <SelectTrigger className="w-64">
+              <SelectValue placeholder="All quizzes" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All quizzes</SelectItem>
+              {quizzes.map((q) => (
+                <SelectItem key={q.id as string} value={q.id as string}>
+                  {q.title as string}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Button type="submit" variant="outline" size="sm">Filter</Button>
+        </form>
       </div>
 
+      {/* Stats row — only when a quiz is selected */}
+      {stats && selectedQuiz && (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-1.5">
+                <Users className="size-4" /> Total Attempts
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{Number(stats.total)}</div>
+              <p className="text-xs text-muted-foreground">{Number(stats.completed)} completed</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-1.5">
+                <Award className="size-4" /> Pass Rate
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-green-600">
+                {Number(stats.completed) > 0
+                  ? `${Math.round((Number(stats.passed) / Number(stats.completed)) * 100)}%`
+                  : "—"}
+              </div>
+              <p className="text-xs text-muted-foreground">{Number(stats.passed)} passed</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-1.5">
+                <TrendingUp className="size-4" /> Average Score
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{Math.round(Number(stats.avg_pct))}%</div>
+              <Progress value={Number(stats.avg_pct)} className="mt-2 h-1.5" />
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-1.5">
+                <Target className="size-4" /> Score Range
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                {Math.round(Number(stats.min_pct))}–{Math.round(Number(stats.max_pct))}%
+              </div>
+              <p className="text-xs text-muted-foreground">min – max</p>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Results table */}
       {results.length === 0 ? (
         <Card>
           <CardContent className="flex flex-col items-center justify-center py-16">
             <ClipboardList className="size-12 text-muted-foreground mb-4" />
             <h3 className="text-lg font-semibold mb-2">No results yet</h3>
             <p className="text-muted-foreground text-center">
-              Results will appear here once interns complete their assigned quizzes.
+              {quizId
+                ? "No attempts recorded for this quiz yet."
+                : "Results will appear here once interns complete their assigned quizzes."}
             </p>
           </CardContent>
         </Card>
       ) : (
         <Card>
           <CardHeader>
-            <CardTitle>All Attempts</CardTitle>
+            <CardTitle>
+              {selectedQuiz ? `${selectedQuiz.title as string} — Attempts` : "All Attempts"}
+            </CardTitle>
             <CardDescription>
-              {results.length} attempt{results.length !== 1 ? "s" : ""} recorded
+              {results.length} attempt{results.length !== 1 ? "s" : ""}
             </CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="p-0">
             <Table>
               <TableHeader>
                 <TableRow>
+                  {!quizId && <TableHead>Quiz</TableHead>}
                   <TableHead>Intern</TableHead>
-                  <TableHead>Quiz</TableHead>
                   <TableHead>Status</TableHead>
-                  <TableHead>Score</TableHead>
-                  <TableHead>Time</TableHead>
-                  <TableHead>Violations</TableHead>
-                  <TableHead>Date</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
+                  <TableHead className="text-right">Score</TableHead>
+                  <TableHead className="text-right">Percentage</TableHead>
+                  <TableHead className="text-right">Rank</TableHead>
+                  <TableHead className="text-right">Time</TableHead>
+                  <TableHead className="text-right">Violations</TableHead>
+                  <TableHead className="text-right">Date</TableHead>
+                  <TableHead />
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {results.map((result) => (
-                  <TableRow key={result.id}>
+                {results.map((r) => (
+                  <TableRow key={r.id as string}>
+                    {!quizId && (
+                      <TableCell className="font-medium max-w-[180px] truncate">
+                        {r.quiz_title as string}
+                      </TableCell>
+                    )}
                     <TableCell>
                       <div>
-                        <p className="font-medium">{result.intern_name}</p>
-                        <p className="text-sm text-muted-foreground">{result.intern_email}</p>
+                        <p className="font-medium leading-tight">{r.intern_name as string}</p>
+                        <p className="text-xs text-muted-foreground">{r.intern_email as string}</p>
                       </div>
                     </TableCell>
-                    <TableCell className="font-medium">{result.quiz_title}</TableCell>
-                    <TableCell>{getStatusBadge(result.status, result.passed)}</TableCell>
                     <TableCell>
-                      {result.percentage !== null ? (
-                        <div className="flex items-center gap-1">
-                          <Target className="size-3.5 text-muted-foreground" />
-                          <span className={result.passed ? "text-green-600 dark:text-green-400 font-medium" : ""}>
-                            {Math.round(result.percentage)}%
+                      <StatusBadge status={r.status as string} passed={r.passed as boolean | null} />
+                    </TableCell>
+                    <TableCell className="text-right font-mono text-sm">
+                      {r.score != null
+                        ? `${r.score}/${r.totalPoints}`
+                        : <span className="text-muted-foreground">—</span>}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {r.percentage != null ? (
+                        <div className="flex flex-col items-end gap-1">
+                          <span className={`font-semibold text-sm ${r.passed ? "text-green-600" : "text-red-500"}`}>
+                            {Math.round(Number(r.percentage))}%
                           </span>
+                          <Progress
+                            value={Number(r.percentage)}
+                            className={`h-1.5 w-20 ${r.passed ? "[&>div]:bg-green-500" : "[&>div]:bg-red-500"}`}
+                          />
                         </div>
                       ) : (
-                        <span className="text-muted-foreground">-</span>
+                        <span className="text-muted-foreground">—</span>
                       )}
                     </TableCell>
-                    <TableCell>
-                      {result.timeSpentSeconds ? (
-                        <span>{Math.floor(result.timeSpentSeconds / 60)}m {result.timeSpentSeconds % 60}s</span>
-                      ) : (
-                        <span className="text-muted-foreground">-</span>
-                      )}
+                    <TableCell className="text-right">
+                      {r.rank != null
+                        ? <span className="font-mono font-medium">#{r.rank as number}</span>
+                        : <span className="text-muted-foreground">—</span>}
                     </TableCell>
-                    <TableCell>
-                      {result.violation_count > 0 ? (
+                    <TableCell className="text-right text-sm text-muted-foreground">
+                      {r.timeSpentSeconds
+                        ? `${Math.floor(Number(r.timeSpentSeconds) / 60)}m ${Number(r.timeSpentSeconds) % 60}s`
+                        : "—"}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {Number(r.violation_count) > 0 ? (
                         <Badge variant="destructive" className="font-mono">
                           <AlertTriangle className="mr-1 size-3" />
-                          {result.violation_count}
+                          {r.violation_count as number}
                         </Badge>
                       ) : (
-                        <Badge variant="outline" className="text-green-600 dark:text-green-400">
-                          <CheckCircle className="mr-1 size-3" />
-                          Clean
-                        </Badge>
+                        <span className="text-xs text-green-600 dark:text-green-400">Clean</span>
                       )}
                     </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {format(new Date(result.startedAt), "MMM d, yyyy")}
+                    <TableCell className="text-right text-xs text-muted-foreground whitespace-nowrap">
+                      {format(new Date(r.startedAt as string), "MMM d, yyyy")}
                     </TableCell>
                     <TableCell className="text-right">
                       <Button variant="ghost" size="sm" asChild>
-                        <Link href={`/admin/results/${result.id}`}>
-                          View Details
-                        </Link>
+                        <Link href={`/admin/results/${r.id as string}`}>View</Link>
                       </Button>
                     </TableCell>
                   </TableRow>

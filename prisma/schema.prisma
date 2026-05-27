@@ -51,6 +51,7 @@ model User {
   publishedQuizzes Quiz[]           @relation("QuizPublisher")
   assignments      QuizAssignment[]
   attempts         QuizAttempt[]
+  auditLogs        AdminAuditLog[]
 
   @@map("users")
 }
@@ -163,6 +164,10 @@ model QuizAttempt {
   answers       Answer[]
   violationLogs Violation[]
 
+  // Admin score override tracking
+  scoreOverriddenAt DateTime? @db.Timestamptz
+  scoreOverriddenBy String?   // adminId of the user who applied the override
+
   // One attempt per intern per quiz (enforced at DB level)
   @@unique([internId, quizId])
   @@map("quiz_attempts")
@@ -195,5 +200,21 @@ model Violation {
   attempt QuizAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
 
   @@map("violations")
+}
+
+model AdminAuditLog {
+  id         String   @id @default(dbgenerated("gen_random_uuid()"))
+  adminId    String
+  action     String   // 'ADMIN_TERMINATED' | 'SCORE_OVERRIDE' | 'RESULTS_UNPUBLISHED'
+  targetType String   // 'attempt' | 'quiz'
+  targetId   String
+  metadata   Json     @default("{}")
+  createdAt  DateTime @default(now()) @db.Timestamptz
+
+  admin User @relation(fields: [adminId], references: [id])
+
+  @@index([targetType, targetId])
+  @@index([adminId])
+  @@map("admin_audit_log")
 }
 

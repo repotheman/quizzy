@@ -1,4 +1,5 @@
 import { sql } from "@/lib/db"
+import { writeAuditLog } from "@/lib/audit"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -160,6 +161,202 @@ export async function maybeAutoPublish(quizId: string): Promise<void> {
 
   // Everyone is done — publish and assign ranks
   await publishResults(quizId, null)
+}
+
+// ─── Admin terminate ──────────────────────────────────────────────────────────
+
+/**
+ * Admin-terminates an in-progress attempt.
+ * Loads the attempt, validates it is IN_PROGRESS, calls finalizeAttempt with
+ * reason="TERMINATED", then writes an audit log entry.
+ *
+ * Throws { status: 404 } if the attempt does not exist.
+ * Throws { status: 409 } if the attempt is already finalized.
+ */
+export async function adminTerminateAttempt(
+  attemptId: string,
+  adminId: string,
+  reason?: string
+): Promise<FinalizeAttemptResult> {
+  // Load the attempt to check existence and status
+  const [attempt] = await sql`
+    SELECT id, "internId", status
+    FROM quiz_attempts
+    WHERE id = ${attemptId}
+  `
+
+  if (!attempt) {
+    throw { status: 404, message: "Attempt not found" }
+  }
+
+  if (attempt.status !== "IN_PROGRESS") {
+    throw { status: 409, message: "Attempt is already finalized" }
+  }
+
+  // Finalize with TERMINATED reason
+  const result = await finalizeAttempt({
+    attemptId,
+    internId: attempt.internId as string,
+    reason: "TERMINATED",
+  })
+
+  // Write audit log (non-fatal — errors are swallowed inside writeAuditLog)
+  await writeAuditLog({
+    adminId,
+    action: "ADMIN_TERMINATED",
+    targetType: "attempt",
+    targetId: attemptId,
+    metadata: { reason: reason ?? null },
+  })
+
+  return result
+}
+
+// ─── Score override ───────────────────────────────────────────────────────────
+
+/**
+ * Overrides the score of a finalized attempt.
+ * Recomputes percentage and passed, updates rank if results are published.
+ *
+ * Throws { status: 404 } if the attempt does not exist.
+ * Throws { status: 409 } if the attempt is IN_PROGRESS.
+ * Throws { status: 422 } if scoreOverride is negative or exceeds totalPoints.
+ */
+export async function overrideScore(
+  attemptId: string,
+  adminId: string,
+  scoreOverride: number
+): Promise<{ score: number; percentage: number; passed: boolean }> {
+  // Load attempt + quiz data in one query
+  const [attempt] = await sql`
+    SELECT
+      qa.id,
+      qa.status,
+      qa.score                AS "previousScore",
+      qa."quizId",
+      qa."totalPoints",
+      q."passingScore",
+      q."resultsPublishedAt"
+    FROM quiz_attempts qa
+    JOIN quizzes q ON q.id = qa."quizId"
+    WHERE qa.id = ${attemptId}
+  `
+
+  if (!attempt) {
+    throw { status: 404, message: "Attempt not found" }
+  }
+
+  if (attempt.status === "IN_PROGRESS") {
+    throw { status: 409, message: "Cannot override score of an in-progress attempt" }
+  }
+
+  const totalPoints = Number(attempt.totalPoints) ?? 0
+
+  if (scoreOverride < 0 || scoreOverride > totalPoints) {
+    throw { status: 422, message: `scoreOverride must be between 0 and ${totalPoints}` }
+  }
+
+  const percentage = Math.round((scoreOverride / totalPoints) * 1000) / 10
+  const passed = percentage >= Number(attempt.passingScore)
+  const previousScore = Number(attempt.previousScore)
+
+  // Update the attempt row
+  await sql`
+    UPDATE quiz_attempts SET
+      score                = ${scoreOverride},
+      percentage           = ${percentage},
+      passed               = ${passed},
+      "scoreOverriddenAt"  = NOW(),
+      "scoreOverriddenBy"  = ${adminId}
+    WHERE id = ${attemptId}
+  `
+
+  // If results are published, re-run rank computation for all finalized attempts
+  if (attempt.resultsPublishedAt !== null) {
+    await sql`
+      UPDATE quiz_attempts att
+      SET rank = ranked.rank
+      FROM (
+        SELECT
+          id,
+          RANK() OVER (
+            ORDER BY percentage DESC NULLS LAST,
+                     "timeSpentSeconds" ASC NULLS LAST
+          ) AS rank
+        FROM quiz_attempts
+        WHERE "quizId" = ${attempt.quizId}
+        AND   status  != 'IN_PROGRESS'
+      ) ranked
+      WHERE att.id = ranked.id
+    `
+  }
+
+  // Write audit log (non-fatal)
+  await writeAuditLog({
+    adminId,
+    action: "SCORE_OVERRIDE",
+    targetType: "attempt",
+    targetId: attemptId,
+    metadata: { previousScore, newScore: scoreOverride },
+  })
+
+  return { score: scoreOverride, percentage, passed }
+}
+
+// ─── Unpublish results ────────────────────────────────────────────────────────
+
+/**
+ * Unpublishes results for a quiz.
+ * Sets resultsPublishedAt/By to NULL and clears all ranks on finalized attempts.
+ *
+ * Throws { status: 404 } if the quiz does not exist.
+ * Throws { status: 409 } if resultsPublishedAt is already NULL.
+ */
+export async function unpublishResults(
+  quizId: string,
+  adminId: string
+): Promise<void> {
+  // Load the quiz to check existence and publication state
+  const [quiz] = await sql`
+    SELECT id, "resultsPublishedAt"
+    FROM quizzes
+    WHERE id = ${quizId}
+  `
+
+  if (!quiz) {
+    throw { status: 404, message: "Quiz not found" }
+  }
+
+  if (quiz.resultsPublishedAt === null) {
+    throw { status: 409, message: "Results are not published" }
+  }
+
+  const previousPublishedAt = (quiz.resultsPublishedAt as Date).toISOString()
+
+  // Clear publication fields on the quiz
+  await sql`
+    UPDATE quizzes SET
+      "resultsPublishedAt" = NULL,
+      "resultsPublishedBy" = NULL
+    WHERE id = ${quizId}
+  `
+
+  // Clear ranks on all finalized attempts for this quiz
+  await sql`
+    UPDATE quiz_attempts SET
+      rank = NULL
+    WHERE "quizId" = ${quizId}
+    AND   status  != 'IN_PROGRESS'
+  `
+
+  // Write audit log (non-fatal)
+  await writeAuditLog({
+    adminId,
+    action: "RESULTS_UNPUBLISHED",
+    targetType: "quiz",
+    targetId: quizId,
+    metadata: { previousPublishedAt },
+  })
 }
 
 // ─── Manual / auto publish ────────────────────────────────────────────────────

@@ -30,6 +30,9 @@ export function useExamProctor({
   const lastViolationTime = useRef<Record<string, number>>({})
   const isFullscreenRef   = useRef(false)
   const mountGraceRef     = useRef(true)
+  // Track whether fullscreen has been entered at least once this session.
+  // FULLSCREEN_EXIT violations are only logged after the first entry.
+  const hasEnteredFullscreenRef = useRef(false)
   // Prevent logging after termination
   const terminatedRef     = useRef(false)
 
@@ -93,7 +96,7 @@ export function useExamProctor({
     // Grace period on mount to avoid false positives from page load events
     const graceTimer = setTimeout(() => {
       mountGraceRef.current = false
-    }, 1500)
+    }, 500)
 
     const handleContextMenu  = (e: MouseEvent)    => { e.preventDefault(); void logViolation("CONTEXT_MENU") }
     const handleCopy         = (e: ClipboardEvent) => { e.preventDefault(); void logViolation("COPY_ATTEMPT") }
@@ -104,7 +107,13 @@ export function useExamProctor({
       const fs = Boolean(document.fullscreenElement)
       setIsFullscreen(fs)
       isFullscreenRef.current = fs
-      if (!fs) void logViolation("FULLSCREEN_EXIT")
+      if (fs) {
+        // Mark that fullscreen has been entered at least once
+        hasEnteredFullscreenRef.current = true
+      } else if (hasEnteredFullscreenRef.current) {
+        // Only log exit if we've been in fullscreen before (not on initial page load)
+        void logViolation("FULLSCREEN_EXIT")
+      }
     }
 
     const handleKeyDown = (e: KeyboardEvent) => {

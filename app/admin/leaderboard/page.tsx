@@ -23,6 +23,8 @@ import {
 import { Trophy, Medal, Clock, Target, AlertTriangle, CheckCircle, XCircle, Users, Lock } from "lucide-react"
 import { format } from "date-fns"
 import { PublishResultsButton } from "./publish-results-button"
+import { UnpublishResultsButton } from "./unpublish-results-button"
+import { ExportCsvButton } from "./export-csv-button"
 
 async function getPublishedQuizzes() {
   return sql`
@@ -244,9 +246,14 @@ export default async function LeaderboardPage({
                       : "Interns cannot see scores or ranks until you publish results."}
                   </CardDescription>
                 </div>
-                {!data.quiz.resultsPublishedAt && (
-                  <PublishResultsButton quizId={selectedQuizId!} />
-                )}
+                <div className="flex items-center gap-2">
+                  <ExportCsvButton quizId={selectedQuizId!} />
+                  {data.quiz.resultsPublishedAt ? (
+                    <UnpublishResultsButton quizId={selectedQuizId!} />
+                  ) : (
+                    <PublishResultsButton quizId={selectedQuizId!} />
+                  )}
+                </div>
               </div>
             </CardHeader>
           </Card>

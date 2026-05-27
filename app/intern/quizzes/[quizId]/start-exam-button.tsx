@@ -31,9 +31,6 @@ export function StartExamButton({
     setIsLoading(true)
     try {
       if (hasInProgressAttempt && attemptId) {
-        // Resuming — request fullscreen now (user gesture), then navigate.
-        // ExamShell will re-request on mount if it drops during navigation.
-        try { await document.documentElement.requestFullscreen() } catch { /* handled by ExamShell overlay */ }
         router.push(`/intern/quizzes/${quizId}/exam?attemptId=${attemptId}`)
         return
       }
@@ -65,10 +62,6 @@ export function StartExamButton({
         router.push("/intern/history")
         return
       }
-
-      // Request fullscreen after the attempt is created (still within the
-      // same user-gesture call stack on most browsers).
-      try { await document.documentElement.requestFullscreen() } catch { /* handled by ExamShell overlay */ }
 
       router.push(`/intern/quizzes/${quizId}/exam?attemptId=${newAttemptId}`)
     } catch (error) {

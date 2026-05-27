@@ -14,8 +14,8 @@ export type ViolationType =
 interface ProctorOptions {
   attemptId: string
   currentViolations: number
-  /** Called after a violation is logged. Receives updated count and whether attempt was terminated. */
-  onViolation: (type: ViolationType, newCount: number, terminated: boolean) => void
+  /** Called after a violation is logged with the updated count. */
+  onViolation: (type: ViolationType, newCount: number) => void
   enabled?: boolean
 }
 
@@ -25,34 +25,26 @@ export function useExamProctor({
   onViolation,
   enabled = true,
 }: ProctorOptions) {
-  const violationCount    = useRef(currentViolations)
+  const violationCount        = useRef(currentViolations)
   const [isFullscreen, setIsFullscreen] = useState(false)
-  const lastViolationTime = useRef<Record<string, number>>({})
-  const isFullscreenRef   = useRef(false)
-  const mountGraceRef     = useRef(true)
-  // Track whether fullscreen has been entered at least once this session.
-  // FULLSCREEN_EXIT violations are only logged after the first entry.
-  const hasEnteredFullscreenRef = useRef(false)
-  // Prevent logging after termination
-  const terminatedRef     = useRef(false)
+  const lastViolationTime     = useRef<Record<string, number>>({})
+  // Only log FULLSCREEN_EXIT after the student has entered fullscreen at least once
+  const hasEnteredFullscreen  = useRef(false)
+  // Short grace period on mount to ignore events fired during page load
+  const mountGrace            = useRef(true)
 
   useEffect(() => { violationCount.current = currentViolations }, [currentViolations])
-  useEffect(() => { isFullscreenRef.current = isFullscreen },     [isFullscreen])
 
   const logViolation = useCallback(async (type: ViolationType) => {
-    if (!enabled || mountGraceRef.current || terminatedRef.current) return
+    if (!enabled || mountGrace.current) return
 
-    // Per-type debounce: 1.5s between same violation type
+    // Debounce: 2s between same violation type
     const now = Date.now()
-    if (now - (lastViolationTime.current[type] ?? 0) < 1500) return
+    if (now - (lastViolationTime.current[type] ?? 0) < 2000) return
     lastViolationTime.current[type] = now
 
-    // Only log non-fullscreen-exit violations when actually in fullscreen
-    // (prevents false positives during page load / before fullscreen is entered)
-    if (!isFullscreenRef.current && type !== "FULLSCREEN_EXIT") return
-
     violationCount.current += 1
-    const newCount = violationCount.current
+    const optimisticCount = violationCount.current
 
     try {
       const res = await fetch(`/api/attempt/${attemptId}/violation`, {
@@ -60,23 +52,20 @@ export function useExamProctor({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ type }),
       })
-
       if (res.ok) {
-        const data = await res.json() as { violations: number; terminated: boolean }
+        const data = await res.json() as { violations: number }
         violationCount.current = data.violations
-        if (data.terminated) terminatedRef.current = true
-        onViolation(type, data.violations, data.terminated)
+        onViolation(type, data.violations)
       } else {
-        // API failed — still notify UI with local count, not terminated
-        onViolation(type, newCount, false)
+        onViolation(type, optimisticCount)
       }
     } catch {
-      // Network error — still notify UI with local count
-      onViolation(type, newCount, false)
+      onViolation(type, optimisticCount)
     }
   }, [attemptId, onViolation, enabled])
 
-  const requestFullscreen = useCallback(async () => {
+  // Expose a requestFullscreen helper — must be called from a user gesture
+  const requestFullscreen = useCallback(async (): Promise<boolean> => {
     if (!enabled) return false
     try {
       if (!document.fullscreenElement) {
@@ -91,50 +80,65 @@ export function useExamProctor({
   useEffect(() => {
     if (!enabled) return
 
-    setIsFullscreen(Boolean(document.fullscreenElement))
+    // Sync initial fullscreen state (document is only available client-side)
+    const alreadyFullscreen = Boolean(document.fullscreenElement)
+    setIsFullscreen(alreadyFullscreen)
+    if (alreadyFullscreen) hasEnteredFullscreen.current = true
 
-    // Grace period on mount to avoid false positives from page load events
-    const graceTimer = setTimeout(() => {
-      mountGraceRef.current = false
-    }, 500)
+    // Grace period: ignore events for the first 600ms after mount
+    const graceTimer = setTimeout(() => { mountGrace.current = false }, 600)
 
-    const handleContextMenu  = (e: MouseEvent)    => { e.preventDefault(); void logViolation("CONTEXT_MENU") }
-    const handleCopy         = (e: ClipboardEvent) => { e.preventDefault(); void logViolation("COPY_ATTEMPT") }
-    const handlePaste        = (e: ClipboardEvent) => { e.preventDefault(); void logViolation("PASTE_ATTEMPT") }
-    const handleVisibility   = () => { if (document.hidden) void logViolation("TAB_SWITCH") }
+    // ── Event handlers ────────────────────────────────────────────────────
 
-    const handleFullscreenChange = () => {
+    const onContextMenu = (e: MouseEvent) => {
+      e.preventDefault()
+      void logViolation("CONTEXT_MENU")
+    }
+
+    const onCopy = (e: ClipboardEvent) => {
+      e.preventDefault()
+      void logViolation("COPY_ATTEMPT")
+    }
+
+    const onPaste = (e: ClipboardEvent) => {
+      e.preventDefault()
+      void logViolation("PASTE_ATTEMPT")
+    }
+
+    const onVisibility = () => {
+      if (document.hidden) void logViolation("TAB_SWITCH")
+    }
+
+    const onFullscreenChange = () => {
       const fs = Boolean(document.fullscreenElement)
       setIsFullscreen(fs)
-      isFullscreenRef.current = fs
       if (fs) {
-        // Mark that fullscreen has been entered at least once
-        hasEnteredFullscreenRef.current = true
-      } else if (hasEnteredFullscreenRef.current) {
-        // Only log exit if we've been in fullscreen before (not on initial page load)
+        hasEnteredFullscreen.current = true
+      } else if (hasEnteredFullscreen.current) {
+        // Only log exit after the student has been in fullscreen at least once
         void logViolation("FULLSCREEN_EXIT")
       }
     }
 
-    const handleKeyDown = (e: KeyboardEvent) => {
-      const isMac = navigator.userAgent.includes("Mac")
+    const onKeyDown = (e: KeyboardEvent) => {
+      const isMac = navigator.platform.toUpperCase().includes("MAC")
       const mod   = isMac ? e.metaKey : e.ctrlKey
-      const blocked = [
-        e.key === "F12",
-        mod && e.shiftKey && ["I", "J", "C"].includes(e.key.toUpperCase()),
-        mod && ["u","U","s","S","a","A","c","C","v","V","p","P"].includes(e.key),
-        e.altKey && e.key === "Tab",
-        e.metaKey && e.key === "Tab",
-      ]
-      if (blocked.some(Boolean)) {
+      const shouldBlock =
+        e.key === "F12" ||
+        (mod && e.shiftKey && ["I", "J", "C"].includes(e.key.toUpperCase())) ||
+        (mod && ["u","U","s","S","a","A","c","C","v","V","p","P"].includes(e.key)) ||
+        (e.altKey && e.key === "Tab") ||
+        (e.metaKey && e.key === "Tab")
+
+      if (shouldBlock) {
         e.preventDefault()
         e.stopPropagation()
       }
     }
 
-    // DevTools detection — check every 5s, only when in fullscreen
-    const devToolsCheck = setInterval(() => {
-      if (!isFullscreenRef.current) return
+    // DevTools heuristic — only fires when in fullscreen to avoid false positives
+    const devToolsInterval = setInterval(() => {
+      if (!document.fullscreenElement) return
       if (
         window.outerWidth  - window.innerWidth  > 160 ||
         window.outerHeight - window.innerHeight > 160
@@ -143,22 +147,23 @@ export function useExamProctor({
       }
     }, 5000)
 
-    document.addEventListener("contextmenu",      handleContextMenu)
-    document.addEventListener("copy",             handleCopy)
-    document.addEventListener("paste",            handlePaste)
-    document.addEventListener("visibilitychange", handleVisibility)
-    document.addEventListener("fullscreenchange", handleFullscreenChange)
-    document.addEventListener("keydown",          handleKeyDown)
+    document.addEventListener("contextmenu",      onContextMenu)
+    document.addEventListener("copy",             onCopy)
+    document.addEventListener("paste",            onPaste)
+    document.addEventListener("visibilitychange", onVisibility)
+    document.addEventListener("fullscreenchange", onFullscreenChange)
+    document.addEventListener("keydown",          onKeyDown)
 
     return () => {
       clearTimeout(graceTimer)
-      clearInterval(devToolsCheck)
-      document.removeEventListener("contextmenu",      handleContextMenu)
-      document.removeEventListener("copy",             handleCopy)
-      document.removeEventListener("paste",            handlePaste)
-      document.removeEventListener("visibilitychange", handleVisibility)
-      document.removeEventListener("fullscreenchange", handleFullscreenChange)
-      document.removeEventListener("keydown",          handleKeyDown)
+      clearInterval(devToolsInterval)
+      document.removeEventListener("contextmenu",      onContextMenu)
+      document.removeEventListener("copy",             onCopy)
+      document.removeEventListener("paste",            onPaste)
+      document.removeEventListener("visibilitychange", onVisibility)
+      document.removeEventListener("fullscreenchange", onFullscreenChange)
+      document.removeEventListener("keydown",          onKeyDown)
+      // Exit fullscreen when exam unmounts (submit / timer expire)
       if (document.fullscreenElement) document.exitFullscreen().catch(() => {})
     }
   }, [logViolation, enabled])

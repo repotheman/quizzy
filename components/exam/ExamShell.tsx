@@ -9,6 +9,8 @@ import { useExamProctor, type ViolationType } from "@/hooks/useExamProctor"
 import { useTimer } from "@/hooks/useTimer"
 import { TimerBar } from "./TimerBar"
 import { QuestionCard } from "./QuestionCard"
+import { CameraMonitor } from "./CameraMonitor"
+import { MonitoringDisclaimer } from "./MonitoringDisclaimer"
 import { ChevronLeft, ChevronRight, AlertTriangle, Maximize2, Loader2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -50,6 +52,7 @@ export function ExamShell({
   const [showSubmitDialog, setShowSubmitDialog] = useState(false)
   const [isSubmitting, setIsSubmitting]         = useState(false)
   const [fullscreenError, setFullscreenError]   = useState<string | null>(null)
+  const [hasAcceptedMonitoring, setHasAcceptedMonitoring] = useState(false)
   const isSubmittingRef                         = useRef(false)
 
   // ── Submit ────────────────────────────────────────────────────────────────
@@ -154,8 +157,16 @@ export function ExamShell({
   return (
     <div className="dark min-h-screen bg-background text-foreground flex flex-col select-none">
 
+      {/* ── Monitoring Disclaimer — shows first before exam starts ── */}
+      {!hasAcceptedMonitoring && (
+        <MonitoringDisclaimer onAccept={() => setHasAcceptedMonitoring(true)} />
+      )}
+
+      {/* ── Camera Monitor — always visible when in fullscreen ── */}
+      <CameraMonitor isActive={isFullscreen && hasAcceptedMonitoring} />
+
       {/* ── Fullscreen overlay ── */}
-      {!isFullscreen && (
+      {!isFullscreen && hasAcceptedMonitoring && (
         <div className="fixed inset-0 z-[49] flex items-center justify-center bg-background/95 backdrop-blur-sm px-4">
           <div className="w-full max-w-md rounded-2xl border bg-card p-8 shadow-xl space-y-5 text-center">
             <div className="flex justify-center">

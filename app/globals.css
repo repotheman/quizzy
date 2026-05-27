@@ -123,3 +123,16 @@
     @apply bg-background text-foreground;
   }
 }
+
+@keyframes scan {
+  0% {
+    transform: translateY(-100%);
+  }
+  100% {
+    transform: translateY(200vh);
+  }
+}
+
+.animate-scan {
+  animation: scan 3s linear infinite;
+}

@@ -1,4 +1,4 @@
-# InternIQ — Proctored Quiz Platform
+# Quizzy — Proctored Quiz Platform
 
 A full-stack exam platform built for managing intern assessments. Admins create and assign quizzes, interns take them under proctored conditions, and results are published as a leaderboard once everyone is done.
 

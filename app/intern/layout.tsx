@@ -86,7 +86,7 @@ export default function InternLayout({
                       <GraduationCap className="size-4" />
                     </div>
                     <div className="flex flex-col gap-0.5 leading-none">
-                      <span className="font-semibold">InternIQ</span>
+                      <span className="font-semibold">Quizzy</span>
                       <span className="text-xs text-muted-foreground">Intern Portal</span>
                     </div>
                   </div>

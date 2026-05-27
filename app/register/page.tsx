@@ -65,12 +65,12 @@ export default function RegisterPage() {
           <div className="flex justify-center mb-4">
             <div className="flex items-center gap-2 text-primary">
               <GraduationCap className="h-10 w-10" />
-              <span className="text-2xl font-bold">InternIQ</span>
+              <span className="text-2xl font-bold">Quizzy</span>
             </div>
           </div>
           <CardTitle className="text-2xl">Create an account</CardTitle>
           <CardDescription>
-            Get started with InternIQ
+            Get started with Quizzy
           </CardDescription>
         </CardHeader>
         <form onSubmit={handleSubmit}>

@@ -155,7 +155,23 @@ export function ExamShell({
   const answeredCount   = Object.keys(answers).length
 
   return (
-    <div className="dark min-h-screen bg-background text-foreground flex flex-col select-none">
+    <div className="dark min-h-screen bg-background text-foreground flex flex-col select-none relative">
+
+      {/* ── Screen Recording Border — red border around entire screen when in fullscreen ── */}
+      {isFullscreen && hasAcceptedMonitoring && (
+        <>
+          {/* Red border */}
+          <div className="fixed inset-0 pointer-events-none z-[100]">
+            <div className="absolute inset-0 border-[4px] border-red-500 animate-pulse" />
+          </div>
+          
+          {/* Screen Recording Indicator - Top Left */}
+          <div className="fixed top-4 left-4 z-[100] flex items-center gap-2 bg-red-500 text-white px-3 py-1.5 rounded-full shadow-lg animate-pulse">
+            <div className="size-2 bg-white rounded-full animate-ping" />
+            <span className="text-xs font-bold">SCREEN RECORDING</span>
+          </div>
+        </>
+      )}
 
       {/* ── Monitoring Disclaimer — shows first before exam starts ── */}
       {!hasAcceptedMonitoring && (

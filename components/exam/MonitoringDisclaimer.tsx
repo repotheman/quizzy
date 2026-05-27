@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
-import { Video, Eye, Mic, AlertTriangle, Loader2 } from "lucide-react"
+import { Video, Eye, Mic, AlertTriangle, Loader2, Monitor } from "lucide-react"
 
 interface MonitoringDisclaimerProps {
   onAccept: () => void
@@ -90,6 +90,16 @@ export function MonitoringDisclaimer({ onAccept }: MonitoringDisclaimerProps) {
             </div>
 
             <div className="flex items-start gap-3 rounded-lg border bg-card/50 p-3">
+              <Monitor className="size-5 text-red-500 mt-0.5 shrink-0" />
+              <div>
+                <p className="text-sm font-medium">Screen Recording</p>
+                <p className="text-xs text-muted-foreground">
+                  Your screen activity will be recorded with a visible red border indicator
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-start gap-3 rounded-lg border bg-card/50 p-3">
               <Eye className="size-5 text-green-500 mt-0.5 shrink-0" />
               <div>
                 <p className="text-sm font-medium">Eye Tracking & Face Detection</p>
@@ -117,6 +127,7 @@ export function MonitoringDisclaimer({ onAccept }: MonitoringDisclaimerProps) {
           <ul className="text-xs text-muted-foreground space-y-1 list-disc list-inside">
             <li>You must grant camera access when prompted by your browser</li>
             <li>You must remain in fullscreen mode throughout the exam</li>
+            <li>A red border will appear around your screen indicating recording is active</li>
             <li>Keep your face visible and centered in the camera at all times</li>
             <li>No talking, looking away, or leaving your seat</li>
             <li>No additional people should be visible in the frame</li>

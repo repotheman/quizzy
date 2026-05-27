@@ -177,6 +177,10 @@ export function CameraMonitor({ isActive = true }: CameraMonitorProps) {
       {/* Monitoring Info */}
       <div className="bg-card/50 backdrop-blur-sm border rounded-lg p-2 text-[10px] text-muted-foreground space-y-1">
         <div className="flex items-center justify-between">
+          <span>Screen Recording:</span>
+          <span className="text-red-500 font-medium">Active</span>
+        </div>
+        <div className="flex items-center justify-between">
           <span>Face Detection:</span>
           <span className="text-green-500 font-medium">Active</span>
         </div>

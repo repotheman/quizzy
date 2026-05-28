@@ -51,8 +51,9 @@ export function MonitoringDisclaimer({ onAccept }: MonitoringDisclaimerProps) {
   }
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/90 backdrop-blur-sm px-4">
-      <div className="w-full max-w-2xl rounded-2xl border-2 border-red-500/50 bg-card p-8 shadow-2xl space-y-6">
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/90 backdrop-blur-sm px-4 py-4">
+      <div className="w-full max-w-2xl rounded-2xl border-2 border-red-500/50 bg-card shadow-2xl overflow-y-auto max-h-[90vh]">
+        <div className="p-6 space-y-5">
         
         {/* Header */}
         <div className="flex items-center gap-3">
@@ -182,6 +183,7 @@ export function MonitoringDisclaimer({ onAccept }: MonitoringDisclaimerProps) {
             ? "Please allow camera access in your browser"
             : "Your exam timer will start after you accept these terms"}
         </p>
+      </div>
       </div>
     </div>
   )

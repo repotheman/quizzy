@@ -21,10 +21,10 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { Trophy, Medal, Clock, Target, AlertTriangle, CheckCircle, XCircle, Users, Lock } from "lucide-react"
-import { format } from "date-fns"
 import { PublishResultsButton } from "./publish-results-button"
 import { UnpublishResultsButton } from "./unpublish-results-button"
 import { ExportCsvButton } from "./export-csv-button"
+import { LocalTime } from "@/components/ui/local-time"
 
 async function getPublishedQuizzes() {
   return sql`
@@ -242,7 +242,7 @@ export default async function LeaderboardPage({
                   </CardTitle>
                   <CardDescription>
                     {data.quiz.resultsPublishedAt
-                      ? `Published ${format(new Date(data.quiz.resultsPublishedAt as string), "PPpp")}`
+                      ? <>Published <LocalTime date={data.quiz.resultsPublishedAt as string} fmt="PPpp" /></>
                       : "Interns cannot see scores or ranks until you publish results."}
                   </CardDescription>
                 </div>
@@ -350,7 +350,7 @@ export default async function LeaderboardPage({
                         </TableCell>
                         <TableCell className="text-sm text-muted-foreground">
                           {a.submittedAt
-                            ? format(new Date(a.submittedAt as string), "MMM d, h:mm a")
+                            ? <LocalTime date={a.submittedAt as string} fmt="MMM d, h:mm a" />
                             : "—"}
                         </TableCell>
                         <TableCell className="text-right">

@@ -17,6 +17,7 @@ import {
   Lock,
 } from "lucide-react"
 import { format } from "date-fns"
+import { LocalTime } from "@/components/ui/local-time"
 
 async function getAttemptHistory(internId: string) {
   return sql`
@@ -115,7 +116,7 @@ export default async function HistoryPage() {
                         )}
                       </div>
                       <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
-                        <span>{format(new Date(attempt.startedAt as string), "MMM d, yyyy · h:mm a")}</span>
+                        <span><LocalTime date={attempt.startedAt as string} fmt="MMM d, yyyy · h:mm a" /></span>
                         {timeSpent > 0 && (
                           <span className="flex items-center gap-1">
                             <Timer className="size-3" />

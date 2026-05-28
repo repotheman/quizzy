@@ -18,6 +18,7 @@ import {
   Lock,
 } from "lucide-react"
 import { format } from "date-fns"
+import { LocalTime } from "@/components/ui/local-time"
 
 async function getAttemptResult(attemptId: string, internId: string) {
   const [attempt] = await sql`
@@ -133,7 +134,7 @@ export default async function InternResultPage({
         <div>
           <h1 className="text-2xl font-bold leading-tight">{attempt.quiz_title as string}</h1>
           <p className="text-sm text-muted-foreground">
-            {format(new Date(attempt.startedAt as string), "MMMM d, yyyy 'at' h:mm a")}
+            <LocalTime date={attempt.startedAt as string} fmt="MMMM d, yyyy 'at' h:mm a" />
           </p>
         </div>
       </div>

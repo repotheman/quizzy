@@ -28,7 +28,7 @@ import {
   Calendar,
   Timer,
 } from "lucide-react"
-import { format } from "date-fns"
+import { LocalTime } from "@/components/ui/local-time"
 import { TerminateAttemptButton } from "./terminate-button"
 import { ScoreOverrideForm } from "./score-override-form"
 
@@ -244,18 +244,18 @@ export default async function AttemptDetailsPage({
       <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
         <span className="flex items-center gap-1.5">
           <Calendar className="size-3.5" />
-          Started {format(new Date(attempt.startedAt as string), "MMM d, yyyy 'at' h:mm a")}
+          Started <LocalTime date={attempt.startedAt as string} fmt="MMM d, yyyy 'at' h:mm a" />
         </span>
         {attempt.submittedAt && (
           <span className="flex items-center gap-1.5">
             <CheckCircle className="size-3.5" />
-            Submitted {format(new Date(attempt.submittedAt as string), "MMM d, yyyy 'at' h:mm a")}
+            Submitted <LocalTime date={attempt.submittedAt as string} fmt="MMM d, yyyy 'at' h:mm a" />
           </span>
         )}
         {attempt.scoreOverriddenAt && (
           <span className="flex items-center gap-1.5">
             <Pencil className="size-3.5" />
-            Score adjusted {format(new Date(attempt.scoreOverriddenAt as string), "MMM d, yyyy 'at' h:mm a")}
+            Score adjusted <LocalTime date={attempt.scoreOverriddenAt as string} fmt="MMM d, yyyy 'at' h:mm a" />
           </span>
         )}
         <Badge
@@ -433,7 +433,7 @@ export default async function AttemptDetailsPage({
                         {violationLabels[v.type as string] ?? v.type as string}
                       </TableCell>
                       <TableCell className="text-right text-sm text-muted-foreground">
-                        {format(new Date(v.timestamp as string), "h:mm:ss a")}
+                        <LocalTime date={v.timestamp as string} fmt="h:mm:ss a" />
                       </TableCell>
                     </TableRow>
                   ))}

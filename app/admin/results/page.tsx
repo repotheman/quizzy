@@ -40,7 +40,10 @@ async function getQuizzes() {
   `
 }
 
+import { LocalTime } from "@/components/ui/local-time"
+
 async function getResults(quizId?: string) {
+  // quizId is undefined when "all" is selected — filter only when a real ID is passed
   const results = await sql`
     SELECT
       qa.id,
@@ -105,11 +108,12 @@ export default async function ResultsPage({
   const session = await auth()
   if (!session?.user || session.user.role !== "ADMIN") redirect("/login")
 
-  const { quizId } = await searchParams
-  const [quizzes, results] = await Promise.all([getQuizzes(), getResults(quizId)])
-  const stats = quizId ? await getQuizStats(quizId) : null
-
-  const selectedQuiz = quizzes.find((q) => q.id === quizId)
+  const { quizId: rawQuizId } = await searchParams
+  // "all" from the select means no filter
+  const effectiveQuizId = rawQuizId === "all" ? undefined : rawQuizId
+  const [quizzes, results] = await Promise.all([getQuizzes(), getResults(effectiveQuizId)])
+  const stats = effectiveQuizId ? await getQuizStats(effectiveQuizId) : null
+  const selectedQuiz = quizzes.find((q) => q.id === effectiveQuizId)
 
   return (
     <div className="space-y-6">
@@ -124,7 +128,7 @@ export default async function ResultsPage({
 
         {/* Quiz filter */}
         <form method="GET" className="flex items-center gap-2">
-          <Select name="quizId" defaultValue={quizId ?? "all"}>
+          <Select name="quizId" defaultValue={rawQuizId ?? "all"}>
             <SelectTrigger className="w-64">
               <SelectValue placeholder="All quizzes" />
             </SelectTrigger>
@@ -204,7 +208,7 @@ export default async function ResultsPage({
             <ClipboardList className="size-12 text-muted-foreground mb-4" />
             <h3 className="text-lg font-semibold mb-2">No results yet</h3>
             <p className="text-muted-foreground text-center">
-              {quizId
+              {effectiveQuizId
                 ? "No attempts recorded for this quiz yet."
                 : "Results will appear here once interns complete their assigned quizzes."}
             </p>
@@ -224,7 +228,7 @@ export default async function ResultsPage({
             <Table>
               <TableHeader>
                 <TableRow>
-                  {!quizId && <TableHead>Quiz</TableHead>}
+                  {!effectiveQuizId && <TableHead>Quiz</TableHead>}
                   <TableHead>Intern</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead className="text-right">Score</TableHead>
@@ -239,7 +243,7 @@ export default async function ResultsPage({
               <TableBody>
                 {results.map((r) => (
                   <TableRow key={r.id as string}>
-                    {!quizId && (
+                    {!effectiveQuizId && (
                       <TableCell className="font-medium max-w-[180px] truncate">
                         {r.quiz_title as string}
                       </TableCell>
@@ -294,7 +298,7 @@ export default async function ResultsPage({
                       )}
                     </TableCell>
                     <TableCell className="text-right text-xs text-muted-foreground whitespace-nowrap">
-                      {format(new Date(r.startedAt as string), "MMM d, yyyy")}
+                      <LocalTime date={r.startedAt as string} fmt="MMM d, yyyy" />
                     </TableCell>
                     <TableCell className="text-right">
                       <Button variant="ghost" size="sm" asChild>

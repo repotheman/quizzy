@@ -28,6 +28,7 @@ import {
 } from "lucide-react"
 import { format } from "date-fns"
 import { InternScoreChart } from "./intern-score-chart"
+import { LocalTime } from "@/components/ui/local-time"
 
 // ─── Data fetchers ────────────────────────────────────────────────────────────
 
@@ -377,13 +378,13 @@ export default async function InternDashboard() {
                         {notStartedYet && startsAt && (
                           <span className="flex items-center gap-1">
                             <Clock className="size-3.5" />
-                            Opens {format(startsAt, "MMM d, h:mm a")}
+                            Opens <LocalTime date={startsAt} fmt="MMM d, h:mm a" />
                           </span>
                         )}
                         {!notStartedYet && endsAt && !windowClosed && (
                           <span className="flex items-center gap-1 text-orange-600 dark:text-orange-400">
                             <AlertTriangle className="size-3.5" />
-                            Join by {format(endsAt, "MMM d, h:mm a")}
+                            Join by <LocalTime date={endsAt} fmt="MMM d, h:mm a" />
                           </span>
                         )}
                       </div>

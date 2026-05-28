@@ -90,7 +90,7 @@ const violationLabels: Record<string, string> = {
   PASTE_ATTEMPT: "Paste Attempt",
   RIGHT_CLICK: "Right Click",
   DEVTOOLS_OPEN: "DevTools Opened",
-  WINDOW_BLUR: "Window Lost Focus",
+  WINDOW_BLUR: "Cursor Left Window",
   CONTEXT_MENU: "Context Menu",
 }
 

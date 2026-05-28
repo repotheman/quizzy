@@ -103,7 +103,7 @@ export function ExamShell({
 
   const { isFullscreen, requestFullscreen } = useExamProctor({
     attemptId,
-    currentViolations: violations,
+    initialViolations: violations,
     onViolation: handleViolation,
     enabled: true,
   })

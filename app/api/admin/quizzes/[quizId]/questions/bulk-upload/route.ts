@@ -40,14 +40,22 @@ function parseJSON(data: string): { questions: ParsedQuestion[]; errors: ParseEr
       continue
     }
 
-    const { type, text, points, options, correctAnswer } = item as Record<string, unknown>
+    const { type, text, codeSnippet, language, points, options, correctAnswer } = item as Record<string, unknown>
 
     if (!text || typeof text !== "string" || !text.trim()) {
       errors.push({ row, message: "Question text is required" })
       continue
     }
 
-    const qType = (type === "TRUE_FALSE" || type === "true_false") ? "TRUE_FALSE" : "MCQ"
+    const qType = (type === "TRUE_FALSE" || type === "true_false" || type === "OUTPUT")
+      ? (type === "TRUE_FALSE" || type === "true_false" ? "TRUE_FALSE" : "MCQ")
+      : "MCQ"
+
+    // If a codeSnippet field is provided, embed it into the text as a fenced code block
+    const lang = typeof language === "string" ? language : (type === "OUTPUT" ? "java" : "")
+    const fullText = codeSnippet && typeof codeSnippet === "string"
+      ? `${text.trim()}\n\`\`\`${lang}\n${codeSnippet.trim()}\n\`\`\``
+      : text.trim()
 
     let qOptions: string[]
     if (qType === "TRUE_FALSE") {
@@ -72,7 +80,7 @@ function parseJSON(data: string): { questions: ParsedQuestion[]; errors: ParseEr
 
     questions.push({
       type: qType,
-      text: text.trim(),
+      text: fullText,
       points: typeof points === "number" && points > 0 ? points : 1,
       options: qOptions,
       correctAnswer: correctIdx,

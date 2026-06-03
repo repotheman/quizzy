@@ -161,8 +161,7 @@ export async function POST(
 
   const [attempt] = await sql`
     SELECT id FROM quiz_attempts WHERE id = ${attemptId}
-  `
-  if (!attempt) return NextResponse.json({ error: "Attempt not found" }, { status: 404 })
+  `  if (!attempt) return NextResponse.json({ error: "Attempt not found" }, { status: 404 })
 
   await sql`
     UPDATE quiz_attempts

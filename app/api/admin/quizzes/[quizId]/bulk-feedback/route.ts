@@ -16,7 +16,7 @@ export async function GET(
 
   const [quiz] = await sql`
     SELECT id, title, "passingScore", "timeLimitMinutes"
-    FROM quizzes WHERE id = ${quizId} AND "createdById" = ${session.user.id}
+    FROM quizzes WHERE id = ${quizId}
   `
   if (!quiz) return NextResponse.json({ error: "Quiz not found" }, { status: 404 })
 
@@ -166,8 +166,8 @@ export async function POST(
 
   const { quizId } = await params
 
-  // Verify ownership
-  const [quiz] = await sql`SELECT id FROM quizzes WHERE id = ${quizId} AND "createdById" = ${session.user.id}`
+  // Verify quiz exists and admin has access
+  const [quiz] = await sql`SELECT id FROM quizzes WHERE id = ${quizId}`
   if (!quiz) return NextResponse.json({ error: "Quiz not found" }, { status: 404 })
 
   let feedbackArray: unknown

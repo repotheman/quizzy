@@ -7,27 +7,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table"
 import {
-  ArrowLeft,
-  User,
-  FileQuestion,
-  Clock,
-  Target,
-  AlertTriangle,
-  CheckCircle,
-  XCircle,
-  Pencil,
-  ShieldAlert,
-  Hash,
-  Calendar,
-  Timer,
+  ArrowLeft, User, FileQuestion, Clock, Target, AlertTriangle,
+  CheckCircle, XCircle, Pencil, ShieldAlert, Hash, Calendar, Timer,
 } from "lucide-react"
 import { LocalTime } from "@/components/ui/local-time"
 import { TerminateAttemptButton } from "./terminate-button"
@@ -38,13 +22,13 @@ async function getAttemptDetails(attemptId: string) {
   const [attempt] = await sql`
     SELECT
       qa.*,
+      qa."aiFeedback",
       u.name  AS intern_name,
       u.email AS intern_email,
       q.title AS quiz_title,
       q.description AS quiz_description,
       q."passingScore"     AS passing_score,
-      q."timeLimitMinutes" AS time_limit,
-      qa."aiFeedback"
+      q."timeLimitMinutes" AS time_limit
     FROM quiz_attempts qa
     JOIN users u ON qa."internId" = u.id
     JOIN quizzes q ON qa."quizId" = q.id
@@ -52,7 +36,6 @@ async function getAttemptDetails(attemptId: string) {
   `
   if (!attempt) return null
 
-  // Fetch all questions with their options and the intern's answer
   const questions = await sql`
     SELECT
       q.id            AS question_id,
@@ -67,17 +50,15 @@ async function getAttemptDetails(attemptId: string) {
     ORDER BY q."order" ASC
   `
 
-  // Fetch all options for those questions
   const questionIds = questions.map((q) => q.question_id as string)
-  const options =
-    questionIds.length > 0
-      ? await sql`
-          SELECT id, "questionId", text, "isCorrect", "order"
-          FROM options
-          WHERE "questionId" = ANY(${questionIds}::text[])
-          ORDER BY "questionId", "order" ASC
-        `
-      : []
+  const options = questionIds.length > 0
+    ? await sql`
+        SELECT id, "questionId", text, "isCorrect", "order"
+        FROM options
+        WHERE "questionId" = ANY(${questionIds}::text[])
+        ORDER BY "questionId", "order" ASC
+      `
+    : []
 
   const violations = await sql`
     SELECT * FROM violations WHERE "attemptId" = ${attemptId} ORDER BY timestamp ASC
@@ -111,7 +92,6 @@ export default async function AttemptDetailsPage({
 
   const { attempt, questions, options, violations } = data
 
-  // Group options by questionId for easy lookup
   const optionsByQuestion = options.reduce<Record<string, typeof options>>(
     (acc, opt) => {
       const qid = opt.questionId as string
@@ -122,93 +102,19 @@ export default async function AttemptDetailsPage({
     {}
   )
 
-  const isFinalized = attempt.status !== "IN_PROGRESS"
-  const correctCount = questions.filter((q) => q.answer_correct === true).length
+  const isFinalized    = attempt.status !== "IN_PROGRESS"
+  const correctCount   = questions.filter((q) => q.answer_correct === true).length
   const totalQuestions = questions.length
-  const percentage = Number(attempt.percentage) || 0
-
-  const questionsPayload = questions.map((q) => {
-    const qOptions = optionsByQuestion[q.question_id as string] ?? []
-    const selectedId = q.selectedOptionId as string | null
-    const selectedOption = qOptions.find((opt) => opt.id === selectedId)
-    const correctOption = qOptions.find((opt) => opt.isCorrect)
-
-    return {
-      id: q.question_id,
-      order: q.question_order,
-      text: q.question_text,
-      points: q.question_points,
-      selectedOptionId: selectedId,
-      selectedOptionText: selectedOption?.text ?? null,
-      isCorrect: q.answer_correct,
-      correctOptionId: correctOption?.id ?? null,
-      correctOptionText: correctOption?.text ?? null,
-      options: qOptions.map((opt) => ({
-        id: opt.id,
-        text: opt.text,
-        isCorrect: opt.isCorrect,
-        order: opt.order,
-      })),
-    }
-  })
-
-  const aiPayload = {
-    attempt: {
-      id: attempt.id,
-      status: attempt.status,
-      score: attempt.score,
-      totalPoints: attempt.totalPoints,
-      percentage: attempt.percentage,
-      passed: attempt.passed,
-      rank: attempt.rank,
-      autoSubmitted: attempt.autoSubmitted,
-      startedAt: attempt.startedAt,
-      submittedAt: attempt.submittedAt,
-      timeSpentSeconds: attempt.timeSpentSeconds,
-    },
-    intern: {
-      id: attempt.internId,
-      name: attempt.intern_name,
-      email: attempt.intern_email,
-    },
-    quiz: {
-      id: attempt.quizId,
-      title: attempt.quiz_title,
-      description: attempt.quiz_description,
-      passingScore: attempt.passing_score,
-      timeLimitMinutes: attempt.time_limit,
-    },
-    questions: questionsPayload,
-    violations: violations.map((v) => ({
-      type: v.type,
-      label: violationLabels[v.type as string] ?? v.type,
-      timestamp: v.timestamp,
-    })),
-  }
-
-  const exportPayload = JSON.stringify(aiPayload, null, 2)
-  const exportPrompt =
-    "You are reviewing a quiz attempt. Provide constructive feedback for the intern. " +
-    "Return ONLY valid JSON with this schema:\n" +
-    "{\n" +
-    "  \"summary\": string,\n" +
-    "  \"strengths\": string[],\n" +
-    "  \"weaknesses\": string[],\n" +
-    "  \"questionFeedback\": [\n" +
-    "    { \"questionId\": string, \"comment\": string, \"isCorrect\": boolean }\n" +
-    "  ],\n" +
-    "  \"overallRecommendation\": string\n" +
-    "}\n" +
-    "Do not wrap the JSON in markdown or code fences."
+  const percentage     = Number(attempt.percentage) || 0
+  const hasFeedback    = !!(attempt as Record<string, unknown>).aiFeedback
 
   return (
     <div className="space-y-6">
-      {/* Back + title */}
+
+      {/* ── Back + title ── */}
       <div className="flex items-center gap-3">
         <Button variant="ghost" size="icon" asChild>
-          <Link href="/admin/results">
-            <ArrowLeft className="size-4" />
-          </Link>
+          <Link href="/admin/results"><ArrowLeft className="size-4" /></Link>
         </Button>
         <div className="min-w-0">
           <h1 className="text-2xl font-bold tracking-tight truncate">{attempt.quiz_title as string}</h1>
@@ -221,9 +127,8 @@ export default async function AttemptDetailsPage({
         </div>
       </div>
 
-      {/* Summary cards */}
+      {/* ── Summary cards ── */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {/* Score */}
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-1.5">
@@ -249,7 +154,6 @@ export default async function AttemptDetailsPage({
           </CardContent>
         </Card>
 
-        {/* Result */}
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-1.5">
@@ -260,11 +164,9 @@ export default async function AttemptDetailsPage({
             {isFinalized ? (
               <>
                 <div className="flex items-center gap-2">
-                  {attempt.passed ? (
-                    <CheckCircle className="size-6 text-green-500" />
-                  ) : (
-                    <XCircle className="size-6 text-red-500" />
-                  )}
+                  {attempt.passed
+                    ? <CheckCircle className="size-6 text-green-500" />
+                    : <XCircle className="size-6 text-red-500" />}
                   <span className={`text-2xl font-bold ${attempt.passed ? "text-green-600" : "text-red-500"}`}>
                     {attempt.passed ? "Passed" : "Failed"}
                   </span>
@@ -282,7 +184,6 @@ export default async function AttemptDetailsPage({
           </CardContent>
         </Card>
 
-        {/* Questions */}
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-1.5">
@@ -298,7 +199,6 @@ export default async function AttemptDetailsPage({
           </CardContent>
         </Card>
 
-        {/* Time */}
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-1.5">
@@ -320,7 +220,7 @@ export default async function AttemptDetailsPage({
         </Card>
       </div>
 
-      {/* Meta row */}
+      {/* ── Meta row ── */}
       <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
         <span className="flex items-center gap-1.5">
           <Calendar className="size-3.5" />
@@ -338,36 +238,21 @@ export default async function AttemptDetailsPage({
             Score adjusted <LocalTime date={attempt.scoreOverriddenAt as string} fmt="MMM d, yyyy 'at' h:mm a" />
           </span>
         )}
-        <Badge
-          variant={
-            attempt.status === "IN_PROGRESS"
-              ? "secondary"
-              : attempt.status === "SUBMITTED"
-              ? "outline"
-              : "destructive"
-          }
-        >
+        <Badge variant={
+          attempt.status === "IN_PROGRESS" ? "secondary" :
+          attempt.status === "SUBMITTED"   ? "outline" : "destructive"
+        }>
           {attempt.status as string}
         </Badge>
       </div>
 
-      <AiFeedbackPanel
-        attemptId={attempt.id as string}
-        exportPrompt={exportPrompt}
-        exportPayload={exportPayload}
-        existingFeedback={(attempt as { ai_feedback?: unknown }).ai_feedback ?? null}
-      />
-
-      {/* Question-by-question analysis */}
+      {/* ── Question analysis ── */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <FileQuestion className="size-5" />
-            Question Analysis
+            <FileQuestion className="size-5" /> Question Analysis
           </CardTitle>
-          <CardDescription>
-            All answer options shown — intern&apos;s selection highlighted
-          </CardDescription>
+          <CardDescription>All answer options shown — intern&apos;s selection highlighted</CardDescription>
         </CardHeader>
         <CardContent className="p-0">
           <Table>
@@ -382,41 +267,34 @@ export default async function AttemptDetailsPage({
             </TableHeader>
             <TableBody>
               {questions.map((q, idx) => {
-                const qOptions = optionsByQuestion[q.question_id as string] ?? []
+                const qOptions   = optionsByQuestion[q.question_id as string] ?? []
                 const selectedId = q.selectedOptionId as string | null
-                const isCorrect = q.answer_correct as boolean | null
+                const isCorrect  = q.answer_correct as boolean | null
 
                 return (
                   <TableRow key={q.question_id as string} className="align-top">
-                    <TableCell className="pl-6 pt-4 text-muted-foreground font-mono text-sm">
-                      {idx + 1}
-                    </TableCell>
+                    <TableCell className="pl-6 pt-4 text-muted-foreground font-mono text-sm">{idx + 1}</TableCell>
                     <TableCell className="pt-4 max-w-xs">
                       <p className="font-medium leading-snug">{q.question_text as string}</p>
                     </TableCell>
                     <TableCell className="pt-3">
                       <div className="space-y-1.5">
                         {qOptions.map((opt) => {
-                          const isSelected = opt.id === selectedId
+                          const isSelected   = opt.id === selectedId
                           const isCorrectOpt = opt.isCorrect as boolean
-
                           let rowClass = "flex items-start gap-2 rounded-md px-2 py-1.5 text-sm"
                           let indicator = null
 
                           if (isSelected && isCorrectOpt) {
-                            // Picked the right answer
                             rowClass += " bg-green-50 dark:bg-green-950/40 text-green-800 dark:text-green-200"
                             indicator = <CheckCircle className="size-3.5 mt-0.5 shrink-0 text-green-600" />
                           } else if (isSelected && !isCorrectOpt) {
-                            // Picked the wrong answer
                             rowClass += " bg-red-50 dark:bg-red-950/40 text-red-800 dark:text-red-200"
                             indicator = <XCircle className="size-3.5 mt-0.5 shrink-0 text-red-500" />
                           } else if (!isSelected && isCorrectOpt) {
-                            // Correct answer the intern didn't pick
                             rowClass += " bg-green-50/50 dark:bg-green-950/20 text-green-700 dark:text-green-300"
                             indicator = <CheckCircle className="size-3.5 mt-0.5 shrink-0 text-green-500 opacity-60" />
                           } else {
-                            // Neutral option
                             rowClass += " text-muted-foreground"
                             indicator = <span className="size-3.5 mt-0.5 shrink-0 rounded-full border border-muted-foreground/30 inline-block" />
                           }
@@ -426,16 +304,11 @@ export default async function AttemptDetailsPage({
                               {indicator}
                               <span className="leading-snug">{opt.text as string}</span>
                               {isSelected && (
-                                <Badge
-                                  variant="outline"
-                                  className={`ml-auto shrink-0 text-xs ${
-                                    isCorrectOpt
-                                      ? "border-green-400 text-green-700 dark:text-green-300"
-                                      : "border-red-400 text-red-700 dark:text-red-300"
-                                  }`}
-                                >
-                                  Selected
-                                </Badge>
+                                <Badge variant="outline" className={`ml-auto shrink-0 text-xs ${
+                                  isCorrectOpt
+                                    ? "border-green-400 text-green-700 dark:text-green-300"
+                                    : "border-red-400 text-red-700 dark:text-red-300"
+                                }`}>Selected</Badge>
                               )}
                               {!isSelected && isCorrectOpt && (
                                 <Badge variant="outline" className="ml-auto shrink-0 text-xs border-green-400/50 text-green-600 dark:text-green-400 opacity-70">
@@ -462,15 +335,9 @@ export default async function AttemptDetailsPage({
                     </TableCell>
                     <TableCell className="text-right pt-4 pr-6">
                       {isFinalized ? (
-                        isCorrect ? (
-                          <Badge className="bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300">
-                            <CheckCircle className="mr-1 size-3" /> Correct
-                          </Badge>
-                        ) : (
-                          <Badge variant="destructive">
-                            <XCircle className="mr-1 size-3" /> Wrong
-                          </Badge>
-                        )
+                        isCorrect
+                          ? <Badge className="bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300"><CheckCircle className="mr-1 size-3" /> Correct</Badge>
+                          : <Badge variant="destructive"><XCircle className="mr-1 size-3" /> Wrong</Badge>
                       ) : (
                         <Badge variant="secondary">Pending</Badge>
                       )}
@@ -483,26 +350,20 @@ export default async function AttemptDetailsPage({
         </CardContent>
       </Card>
 
-      {/* Violations + Admin Controls side by side */}
+      {/* ── Violations + Admin Controls ── */}
       <div className="grid gap-6 lg:grid-cols-2">
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <AlertTriangle className="size-5" />
-              Violations
-              {violations.length > 0 && (
-                <Badge variant="destructive" className="ml-auto">{violations.length}</Badge>
-              )}
+              <AlertTriangle className="size-5" /> Violations
+              {violations.length > 0 && <Badge variant="destructive" className="ml-auto">{violations.length}</Badge>}
             </CardTitle>
-            <CardDescription>
-              Proctoring events recorded during this attempt
-            </CardDescription>
+            <CardDescription>Proctoring events recorded during this attempt</CardDescription>
           </CardHeader>
           <CardContent>
             {violations.length === 0 ? (
               <div className="flex items-center gap-2 text-green-600 dark:text-green-400 py-2">
-                <CheckCircle className="size-4" />
-                <span>No violations detected</span>
+                <CheckCircle className="size-4" /><span>No violations detected</span>
               </div>
             ) : (
               <Table>
@@ -533,8 +394,7 @@ export default async function AttemptDetailsPage({
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <ShieldAlert className="size-5" />
-              Admin Controls
+              <ShieldAlert className="size-5" /> Admin Controls
             </CardTitle>
             <CardDescription>Manage this attempt</CardDescription>
           </CardHeader>
@@ -550,25 +410,26 @@ export default async function AttemptDetailsPage({
         </Card>
       </div>
 
-      {/* AI Feedback */}
+      {/* ── AI Feedback ── only for finalized attempts ── */}
       {isFinalized && (
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-base">
-              AI Feedback
+            <CardTitle className="text-base flex items-center gap-2">
+              ✨ AI Feedback
             </CardTitle>
             <CardDescription>
-              Generate a prompt from this attempt, paste it into Claude or ChatGPT, then save the response to show the intern personalised feedback.
+              Generate a prompt, paste it into Claude or ChatGPT, then save the response to show the intern personalised feedback.
             </CardDescription>
           </CardHeader>
           <CardContent>
             <AiFeedbackPanel
               attemptId={attemptId}
-              hasFeedback={!!attempt.aiFeedback}
+              hasFeedback={hasFeedback}
             />
           </CardContent>
         </Card>
       )}
+
     </div>
   )
 }

@@ -33,7 +33,6 @@ import { LocalTime } from "@/components/ui/local-time"
 import { TerminateAttemptButton } from "./terminate-button"
 import { ScoreOverrideForm } from "./score-override-form"
 import { AiFeedbackPanel } from "./ai-feedback-panel"
-import { AiFeedbackPanel } from "./ai-feedback-panel"
 
 async function getAttemptDetails(attemptId: string) {
   const [attempt] = await sql`

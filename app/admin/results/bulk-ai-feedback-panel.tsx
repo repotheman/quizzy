@@ -57,11 +57,25 @@ export function BulkAiFeedbackPanel({ quizId, studentCount }: BulkAiFeedbackPane
     setJsonError(null)
     setSaveResult(null)
 
+    const raw = feedbackJson.trim()
+
+    // Strip markdown code fences if AI wrapped the response
+    const stripped = raw
+      .replace(/^```json\s*/i, "")
+      .replace(/^```\s*/i, "")
+      .replace(/\s*```$/i, "")
+      .trim()
+
+    // Replace smart/curly quotes with straight quotes (copy-paste artefact)
+    const sanitized = stripped
+      .replace(/[\u201C\u201D]/g, '"')
+      .replace(/[\u2018\u2019]/g, "'")
+
     let parsed: unknown
     try {
-      parsed = JSON.parse(feedbackJson.trim())
-    } catch {
-      setJsonError("Invalid JSON — make sure you pasted the AI's response exactly.")
+      parsed = JSON.parse(sanitized)
+    } catch (e) {
+      setJsonError(`Invalid JSON: ${e instanceof Error ? e.message : "parse error"}. Make sure to copy the raw JSON, not a formatted version.`)
       return
     }
 

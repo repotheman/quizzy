@@ -154,6 +154,9 @@ model QuizAttempt {
   violations    Int     @default(0)
   autoSubmitted Boolean @default(false)
 
+  // AI feedback payload returned by external AI tools
+  aiFeedback Json? @map("ai_feedback")
+
   // Timing — timer = timeLimitMinutes * 60 - elapsed since startedAt
   startedAt        DateTime  @default(now()) @db.Timestamptz
   submittedAt      DateTime? @db.Timestamptz

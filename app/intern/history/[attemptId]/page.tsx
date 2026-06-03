@@ -16,14 +16,19 @@ import {
   Hash,
   FileQuestion,
   Lock,
+  Sparkles,
+  TrendingUp,
+  TrendingDown,
+  Lightbulb,
+  BookOpen,
 } from "lucide-react"
-import { format } from "date-fns"
 import { LocalTime } from "@/components/ui/local-time"
 
 async function getAttemptResult(attemptId: string, internId: string) {
   const [attempt] = await sql`
     SELECT
       qa.*,
+      qa."aiFeedback",
       q.title          AS quiz_title,
       q."passingScore" AS passing_score,
       q."resultsPublishedAt" AS results_published_at
@@ -124,6 +129,21 @@ export default async function InternResultPage({
   const totalQ       = questions.length
   const timeSpent    = Number(attempt.timeSpentSeconds) || 0
 
+  // Parse aiFeedback — Neon returns jsonb as an object already
+  type AiFeedback = {
+    overall_summary?: string
+    performance_level?: string
+    strengths?: string[]
+    improvements?: string[]
+    wrong_questions?: { question: string; intern_answer: string; correct_answer: string; tip: string }[]
+    time_assessment?: string
+    recommended_topics?: string[]
+    encouragement?: string
+  }
+  const feedback: AiFeedback | null = attempt.aiFeedback
+    ? (typeof attempt.aiFeedback === "string" ? JSON.parse(attempt.aiFeedback) : attempt.aiFeedback) as AiFeedback
+    : null
+
   return (
     <div className="space-y-6">
       {/* Back */}
@@ -222,6 +242,125 @@ export default async function InternResultPage({
           </CardContent>
         </Card>
       </div>
+
+      {feedback && (
+        <Card className="border-purple-500/20 bg-purple-500/5">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Sparkles className="size-5 text-purple-500" />
+              AI Performance Feedback
+              {feedback.performance_level && (
+                <Badge className={`ml-auto text-xs ${
+                  feedback.performance_level === "Excellent" ? "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300" :
+                  feedback.performance_level === "Good"      ? "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300" :
+                  feedback.performance_level === "Average"   ? "bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-300" :
+                  "bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300"
+                }`}>
+                  {feedback.performance_level}
+                </Badge>
+              )}
+            </CardTitle>
+            {feedback.overall_summary && (
+              <CardDescription className="text-sm text-foreground/80 leading-relaxed">
+                {feedback.overall_summary}
+              </CardDescription>
+            )}
+          </CardHeader>
+          <CardContent className="space-y-5">
+
+            {/* Strengths + Improvements */}
+            <div className="grid sm:grid-cols-2 gap-4">
+              {feedback.strengths && feedback.strengths.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold text-green-600 dark:text-green-400 flex items-center gap-1.5 uppercase tracking-wide">
+                    <TrendingUp className="size-3.5" /> Strengths
+                  </p>
+                  <ul className="space-y-1">
+                    {feedback.strengths.map((s, i) => (
+                      <li key={i} className="flex items-start gap-2 text-sm">
+                        <CheckCircle className="size-3.5 text-green-500 shrink-0 mt-0.5" />
+                        {s}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {feedback.improvements && feedback.improvements.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold text-orange-600 dark:text-orange-400 flex items-center gap-1.5 uppercase tracking-wide">
+                    <TrendingDown className="size-3.5" /> Areas to Improve
+                  </p>
+                  <ul className="space-y-1">
+                    {feedback.improvements.map((s, i) => (
+                      <li key={i} className="flex items-start gap-2 text-sm">
+                        <XCircle className="size-3.5 text-orange-500 shrink-0 mt-0.5" />
+                        {s}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+
+            {/* Wrong questions with tips */}
+            {feedback.wrong_questions && feedback.wrong_questions.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5 uppercase tracking-wide">
+                  <Lightbulb className="size-3.5" /> Question Tips
+                </p>
+                <div className="space-y-2">
+                  {feedback.wrong_questions.map((wq, i) => (
+                    <div key={i} className="rounded-lg border bg-background p-3 space-y-1.5">
+                      <p className="text-sm font-medium leading-snug">{wq.question}</p>
+                      <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
+                        <span className="text-red-600 dark:text-red-400">
+                          Your answer: <span className="font-medium">{wq.intern_answer}</span>
+                        </span>
+                        <span className="text-green-600 dark:text-green-400">
+                          Correct: <span className="font-medium">{wq.correct_answer}</span>
+                        </span>
+                      </div>
+                      {wq.tip && (
+                        <p className="text-xs text-muted-foreground bg-muted/50 rounded px-2 py-1">
+                          💡 {wq.tip}
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Recommended topics */}
+            {feedback.recommended_topics && feedback.recommended_topics.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5 uppercase tracking-wide">
+                  <BookOpen className="size-3.5" /> Recommended Topics to Study
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {feedback.recommended_topics.map((t, i) => (
+                    <Badge key={i} variant="outline" className="text-xs">{t}</Badge>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Time + encouragement */}
+            <div className="space-y-2 pt-1 border-t">
+              {feedback.time_assessment && (
+                <p className="text-sm text-muted-foreground">
+                  ⏱ {feedback.time_assessment}
+                </p>
+              )}
+              {feedback.encouragement && (
+                <p className="text-sm font-medium text-purple-700 dark:text-purple-300">
+                  ✨ {feedback.encouragement}
+                </p>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Question-by-question analysis */}
       <Card>

@@ -32,6 +32,8 @@ import {
 import { LocalTime } from "@/components/ui/local-time"
 import { TerminateAttemptButton } from "./terminate-button"
 import { ScoreOverrideForm } from "./score-override-form"
+import { AiFeedbackPanel } from "./ai-feedback-panel"
+import { AiFeedbackPanel } from "./ai-feedback-panel"
 
 async function getAttemptDetails(attemptId: string) {
   const [attempt] = await sql`
@@ -42,7 +44,8 @@ async function getAttemptDetails(attemptId: string) {
       q.title AS quiz_title,
       q.description AS quiz_description,
       q."passingScore"     AS passing_score,
-      q."timeLimitMinutes" AS time_limit
+      q."timeLimitMinutes" AS time_limit,
+      qa."aiFeedback"
     FROM quiz_attempts qa
     JOIN users u ON qa."internId" = u.id
     JOIN quizzes q ON qa."quizId" = q.id
@@ -124,6 +127,80 @@ export default async function AttemptDetailsPage({
   const correctCount = questions.filter((q) => q.answer_correct === true).length
   const totalQuestions = questions.length
   const percentage = Number(attempt.percentage) || 0
+
+  const questionsPayload = questions.map((q) => {
+    const qOptions = optionsByQuestion[q.question_id as string] ?? []
+    const selectedId = q.selectedOptionId as string | null
+    const selectedOption = qOptions.find((opt) => opt.id === selectedId)
+    const correctOption = qOptions.find((opt) => opt.isCorrect)
+
+    return {
+      id: q.question_id,
+      order: q.question_order,
+      text: q.question_text,
+      points: q.question_points,
+      selectedOptionId: selectedId,
+      selectedOptionText: selectedOption?.text ?? null,
+      isCorrect: q.answer_correct,
+      correctOptionId: correctOption?.id ?? null,
+      correctOptionText: correctOption?.text ?? null,
+      options: qOptions.map((opt) => ({
+        id: opt.id,
+        text: opt.text,
+        isCorrect: opt.isCorrect,
+        order: opt.order,
+      })),
+    }
+  })
+
+  const aiPayload = {
+    attempt: {
+      id: attempt.id,
+      status: attempt.status,
+      score: attempt.score,
+      totalPoints: attempt.totalPoints,
+      percentage: attempt.percentage,
+      passed: attempt.passed,
+      rank: attempt.rank,
+      autoSubmitted: attempt.autoSubmitted,
+      startedAt: attempt.startedAt,
+      submittedAt: attempt.submittedAt,
+      timeSpentSeconds: attempt.timeSpentSeconds,
+    },
+    intern: {
+      id: attempt.internId,
+      name: attempt.intern_name,
+      email: attempt.intern_email,
+    },
+    quiz: {
+      id: attempt.quizId,
+      title: attempt.quiz_title,
+      description: attempt.quiz_description,
+      passingScore: attempt.passing_score,
+      timeLimitMinutes: attempt.time_limit,
+    },
+    questions: questionsPayload,
+    violations: violations.map((v) => ({
+      type: v.type,
+      label: violationLabels[v.type as string] ?? v.type,
+      timestamp: v.timestamp,
+    })),
+  }
+
+  const exportPayload = JSON.stringify(aiPayload, null, 2)
+  const exportPrompt =
+    "You are reviewing a quiz attempt. Provide constructive feedback for the intern. " +
+    "Return ONLY valid JSON with this schema:\n" +
+    "{\n" +
+    "  \"summary\": string,\n" +
+    "  \"strengths\": string[],\n" +
+    "  \"weaknesses\": string[],\n" +
+    "  \"questionFeedback\": [\n" +
+    "    { \"questionId\": string, \"comment\": string, \"isCorrect\": boolean }\n" +
+    "  ],\n" +
+    "  \"overallRecommendation\": string\n" +
+    "}\n" +
+    "Do not wrap the JSON in markdown or code fences."
 
   return (
     <div className="space-y-6">
@@ -274,6 +351,13 @@ export default async function AttemptDetailsPage({
           {attempt.status as string}
         </Badge>
       </div>
+
+      <AiFeedbackPanel
+        attemptId={attempt.id as string}
+        exportPrompt={exportPrompt}
+        exportPayload={exportPayload}
+        existingFeedback={(attempt as { ai_feedback?: unknown }).ai_feedback ?? null}
+      />
 
       {/* Question-by-question analysis */}
       <Card>
@@ -466,6 +550,26 @@ export default async function AttemptDetailsPage({
           </CardContent>
         </Card>
       </div>
+
+      {/* AI Feedback */}
+      {isFinalized && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              AI Feedback
+            </CardTitle>
+            <CardDescription>
+              Generate a prompt from this attempt, paste it into Claude or ChatGPT, then save the response to show the intern personalised feedback.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <AiFeedbackPanel
+              attemptId={attemptId}
+              hasFeedback={!!attempt.aiFeedback}
+            />
+          </CardContent>
+        </Card>
+      )}
     </div>
   )
 }

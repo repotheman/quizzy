@@ -1,5 +1,6 @@
-import { notFound } from "next/navigation"
+import { notFound, redirect } from "next/navigation"
 import Link from "next/link"
+import { auth } from "@/lib/auth"
 import { sql } from "@/lib/db"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -99,6 +100,9 @@ export default async function AttemptDetailsPage({
 }: {
   params: Promise<{ attemptId: string }>
 }) {
+  const session = await auth()
+  if (!session?.user || session.user.role !== "ADMIN") redirect("/login")
+
   const { attemptId } = await params
   const data = await getAttemptDetails(attemptId)
   if (!data) notFound()

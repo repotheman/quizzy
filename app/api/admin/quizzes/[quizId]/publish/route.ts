@@ -21,7 +21,8 @@ export async function POST(
     const { quizId } = await params
 
     const [quiz] = await sql`
-      SELECT id, "resultsPublishedAt" FROM quizzes WHERE id = ${quizId}
+      SELECT id, "resultsPublishedAt" FROM quizzes
+      WHERE id = ${quizId} AND "createdById" = ${session.user.id}
     `
     if (!quiz) {
       return NextResponse.json({ error: "Quiz not found" }, { status: 404 })

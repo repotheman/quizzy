@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic'
+
 import { sql } from "@/lib/db"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -34,8 +36,10 @@ async function getPublishedQuizzes() {
 }
 
 export default async function InternsPage() {
-  const interns = await getInterns()
-  const quizzes = await getPublishedQuizzes()
+  const [interns, quizzes] = await Promise.all([
+    getInterns(),
+    getPublishedQuizzes(),
+  ])
 
   return (
     <div className="space-y-6">

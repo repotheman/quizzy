@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { sql, generateId } from "@/lib/db"
+import { rescoreAttempts } from "@/lib/attempts"
 
 export async function PATCH(
   request: Request,
@@ -14,7 +15,7 @@ export async function PATCH(
   const { quizId, questionId } = await params
 
   try {
-    const [quiz] = await sql`SELECT id FROM quizzes WHERE id = ${quizId}`
+    const [quiz] = await sql`SELECT id FROM quizzes WHERE id = ${quizId} AND "createdById" = ${session.user.id}`
     if (!quiz) return NextResponse.json({ error: "Quiz not found" }, { status: 404 })
 
     const { type, text, points, options } = await request.json()
@@ -40,12 +41,28 @@ export async function PATCH(
 
     await sql`DELETE FROM options WHERE "questionId" = ${questionId}`
 
-    for (let i = 0; i < options.length; i++) {
+    // Batch insert options in one query
+    if (options.length > 0) {
+      const ids      = options.map(() => generateId())
+      const qIds     = options.map(() => questionId)
+      const texts    = options.map((o: { text: string }) => o.text)
+      const corrects = options.map((o: { isCorrect: boolean }) => o.isCorrect || false)
+      const orders   = options.map((_: unknown, i: number) => i + 1)
+
       await sql`
         INSERT INTO options (id, "questionId", text, "isCorrect", "order")
-        VALUES (${generateId()}, ${questionId}, ${options[i].text}, ${options[i].isCorrect || false}, ${i + 1})
+        SELECT * FROM UNNEST(
+          ${ids}::text[],
+          ${qIds}::text[],
+          ${texts}::text[],
+          ${corrects}::boolean[],
+          ${orders}::int[]
+        ) AS t(id, "questionId", text, "isCorrect", "order")
       `
     }
+
+    // Rescore all finalized attempts since points may have changed
+    await rescoreAttempts(quizId)
 
     return NextResponse.json({ message: "Question updated" })
   } catch (error) {
@@ -66,7 +83,7 @@ export async function DELETE(
   const { quizId, questionId } = await params
 
   try {
-    const [quiz] = await sql`SELECT id FROM quizzes WHERE id = ${quizId}`
+    const [quiz] = await sql`SELECT id FROM quizzes WHERE id = ${quizId} AND "createdById" = ${session.user.id}`
     if (!quiz) return NextResponse.json({ error: "Quiz not found" }, { status: 404 })
 
     await sql`DELETE FROM questions WHERE id = ${questionId} AND "quizId" = ${quizId}`

@@ -197,9 +197,9 @@ export async function POST(
   const { quizId } = await params
 
   try {
-    // Verify quiz exists
+    // Verify quiz exists and belongs to this admin (M9 — ownership check)
     const [quiz] = await sql`
-      SELECT id FROM quizzes WHERE id = ${quizId}
+      SELECT id FROM quizzes WHERE id = ${quizId} AND "createdById" = ${session.user.id}
     `
 
     if (!quiz) {
@@ -210,6 +210,11 @@ export async function POST(
 
     if (!format || !data) {
       return NextResponse.json({ error: "format and data are required" }, { status: 400 })
+    }
+
+    // Prevent unbounded memory usage from huge payloads
+    if (typeof data !== "string" || data.length > 500_000) {
+      return NextResponse.json({ error: "Data too large (max 500KB)" }, { status: 413 })
     }
 
     let result: { questions: ParsedQuestion[]; errors: ParseError[] }
@@ -245,11 +250,24 @@ export async function POST(
         VALUES (${questionId}, ${quizId}, ${q.type}, ${q.text}, ${q.points}, ${nextOrder}, NOW())
       `
 
-      for (let j = 0; j < q.options.length; j++) {
-        const optionId = generateId()
+      // Batch insert all options for this question in a single query
+      if (q.options.length > 0) {
+        // Build values using per-row sql fragments then unnest
+        const ids       = q.options.map(() => generateId())
+        const qIds      = q.options.map(() => questionId)
+        const texts     = q.options
+        const corrects  = q.options.map((_, j) => j === q.correctAnswer)
+        const orders    = q.options.map((_, j) => j + 1)
+
         await sql`
           INSERT INTO options (id, "questionId", text, "isCorrect", "order")
-          VALUES (${optionId}, ${questionId}, ${q.options[j]}, ${j === q.correctAnswer}, ${j + 1})
+          SELECT * FROM UNNEST(
+            ${ids}::text[],
+            ${qIds}::text[],
+            ${texts}::text[],
+            ${corrects}::boolean[],
+            ${orders}::int[]
+          ) AS t(id, "questionId", text, "isCorrect", "order")
         `
       }
 

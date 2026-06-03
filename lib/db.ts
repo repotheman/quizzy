@@ -4,6 +4,13 @@ if (!process.env.DATABASE_URL) {
   throw new Error('DATABASE_URL environment variable is not set')
 }
 
+// Use neon with no static fetchOptions.
+// A static AbortSignal (like AbortSignal.timeout(60_000)) is created once at
+// module load time — once it fires or is aborted it stays aborted permanently,
+// causing every subsequent query to fail immediately.
+// Neon's HTTP driver has no built-in timeout limit; the serverless platform
+// (Vercel, etc.) enforces its own function-level timeout (typically 60s),
+// which is sufficient to handle Neon free-tier cold starts (~2–30s).
 export const sql = neon(process.env.DATABASE_URL)
 
 export function generateId(): string {

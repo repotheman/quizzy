@@ -27,8 +27,13 @@ import {
   AlertTriangle,
 } from "lucide-react"
 import { format } from "date-fns"
-import { InternScoreChart } from "./intern-score-chart"
+import dynamic from "next/dynamic"
 import { LocalTime } from "@/components/ui/local-time"
+
+const InternScoreChart = dynamic(
+  () => import("./intern-score-chart").then((mod) => mod.InternScoreChart)
+)
+
 
 // ─── Data fetchers ────────────────────────────────────────────────────────────
 

@@ -28,6 +28,15 @@ export async function POST(request: Request) {
       )
     }
 
+    // ADMIN accounts can only be created by an existing admin.
+    // Self-registration is restricted to INTERN only.
+    if (role === "ADMIN") {
+      return NextResponse.json(
+        { error: "Admin accounts cannot be self-registered. Contact your administrator." },
+        { status: 403 }
+      )
+    }
+
     // Check if user already exists
     const existingUsers = await sql`
       SELECT id FROM users WHERE email = ${email}

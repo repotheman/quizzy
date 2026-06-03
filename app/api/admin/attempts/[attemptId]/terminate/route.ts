@@ -1,17 +1,30 @@
 import { NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
+import { sql } from "@/lib/db"
 import { adminTerminateAttempt } from "@/lib/attempts"
 
 export async function POST(
   request: Request,
-  { params }: { params: { attemptId: string } }
+  { params }: { params: Promise<{ attemptId: string }> }
 ) {
   const session = await auth()
   if (!session || session.user.role !== "ADMIN") {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
-  const { attemptId } = params
+  const { attemptId } = await params
+
+  // Verify the attempt's quiz belongs to this admin before terminating
+  const [ownership] = await sql`
+    SELECT qa.id
+    FROM quiz_attempts qa
+    JOIN quizzes q ON q.id = qa."quizId"
+    WHERE qa.id = ${attemptId}
+    AND q."createdById" = ${session.user.id}
+  `
+  if (!ownership) {
+    return NextResponse.json({ error: "Attempt not found" }, { status: 404 })
+  }
 
   // Parse optional reason from request body
   let reason: string | undefined

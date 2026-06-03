@@ -4,6 +4,27 @@ import { sql } from "@/lib/db"
 import { ExamShell } from "@/components/exam/ExamShell"
 import { finalizeAttempt } from "@/lib/attempts"
 
+// ── Deterministic shuffle using attemptId as seed ─────────────────────────────
+// Same intern resuming always gets the same order.
+// Different interns (different attemptIds) get different orders.
+function seededShuffle<T>(arr: T[], seed: string): T[] {
+  // Simple 32-bit xorshift seeded from the string
+  let s = 0
+  for (let i = 0; i < seed.length; i++) {
+    s = (Math.imul(31, s) + seed.charCodeAt(i)) | 0
+  }
+  function rand() {
+    s ^= s << 13; s ^= s >> 17; s ^= s << 5
+    return (s >>> 0) / 0x100000000
+  }
+  const out = [...arr]
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1))
+    ;[out[i], out[j]] = [out[j], out[i]]
+  }
+  return out
+}
+
 export default async function ExamPage({
   params,
   searchParams,
@@ -31,6 +52,8 @@ export default async function ExamPage({
       q.title                                                        AS "quizTitle",
       q."timeLimitMinutes",
       q."maxViolations",
+      q."shuffleQuestions",
+      q."shuffleOptions",
       EXTRACT(EPOCH FROM (NOW() - qa."startedAt"))::int              AS elapsed_seconds,
       (q."timeLimitMinutes" * 60)
         - EXTRACT(EPOCH FROM (NOW() - qa."startedAt"))::int          AS remaining_seconds
@@ -92,6 +115,21 @@ export default async function ExamPage({
       .map(o => ({ id: o.id, text: o.text })),
   }))
 
+  // ── Per-intern shuffle ────────────────────────────────────────────────────
+  // Uses attemptId as seed so the same intern always sees the same order
+  // when resuming, but different interns get different orderings.
+  const finalQuestions = row.shuffleQuestions
+    ? seededShuffle(questionsWithOptions, attemptId)
+    : questionsWithOptions
+
+  const finalQuestionsWithShuffledOptions = row.shuffleOptions
+    ? finalQuestions.map((q, idx) => ({
+        ...q,
+        // Use a unique seed per question so options are shuffled differently per question
+        options: seededShuffle(q.options, `${attemptId}-${idx}`),
+      }))
+    : finalQuestions
+
   return (
     <ExamShell
       attemptId={attemptId}
@@ -100,7 +138,7 @@ export default async function ExamPage({
       initialSeconds={initialSeconds}
       maxViolations={Number(row.maxViolations)}
       initialViolations={Number(row.violations) || 0}
-      questions={questionsWithOptions}
+      questions={finalQuestionsWithShuffledOptions}
       existingAnswers={existingAnswers}
     />
   )

@@ -4,14 +4,14 @@ import { overrideScore } from "@/lib/attempts"
 
 export async function PATCH(
   request: Request,
-  { params }: { params: { attemptId: string } }
+  { params }: { params: Promise<{ attemptId: string }> }
 ) {
   const session = await auth()
   if (!session || session.user.role !== "ADMIN") {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
-  const { attemptId } = params
+  const { attemptId } = await params
 
   // Parse and validate scoreOverride from request body
   let scoreOverride: unknown

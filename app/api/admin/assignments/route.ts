@@ -68,50 +68,69 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "No valid interns found to assign" }, { status: 404 })
     }
 
+    // Batch-validate all intern IDs in a single query instead of N+1
+    const validInterns = await sql`
+      SELECT id FROM users WHERE id = ANY(${internIdsToAssign}::text[]) AND role = 'INTERN'
+    `
+    const validInternIds = new Set(validInterns.map((r: { id: string }) => r.id))
+
+    // Batch-check existing assignments in a single query instead of N+1
+    const existingAssignments = await sql`
+      SELECT id, "internId" FROM quiz_assignments
+      WHERE "quizId" = ${quizId} AND "internId" = ANY(${internIdsToAssign}::text[])
+    `
+    const existingByInternId = new Map(
+      existingAssignments.map((r: { id: string; internId: string }) => [r.internId, r.id])
+    )
+
     const results: { internId: string; id?: string; status: string }[] = []
+    const toInsert: { id: string; internId: string }[] = []
+    const toUpdate: string[] = []
 
     for (const iid of internIdsToAssign) {
-      const [intern] = await sql`
-        SELECT id FROM users WHERE id = ${iid} AND role = 'INTERN'
-      `
-      if (!intern) {
+      if (!validInternIds.has(iid)) {
         results.push({ internId: iid, status: "not_found" })
         continue
       }
 
-      const [existing] = await sql`
-        SELECT id FROM quiz_assignments
-        WHERE "quizId" = ${quizId} AND "internId" = ${iid}
-      `
-      if (existing) {
-        // Update the window times on re-assign (e.g. after unpublish → republish)
-        await sql`
-          UPDATE quiz_assignments
-          SET
-            "startAt"      = ${startAt ? new Date(startAt) : null},
-            "endAt"        = ${endAt   ? new Date(endAt)   : null},
-            "assignedById" = ${session.user.id}
-          WHERE id = ${existing.id}
-        `
-        results.push({ internId: iid, id: existing.id, status: "updated" })
-        continue
+      const existingId = existingByInternId.get(iid)
+      if (existingId) {
+        toUpdate.push(existingId)
+        results.push({ internId: iid, id: existingId, status: "updated" })
+      } else {
+        const id = generateId()
+        toInsert.push({ id, internId: iid })
+        results.push({ internId: iid, id, status: "assigned" })
       }
+    }
 
-      const id = generateId()
+    // Batch update existing assignments
+    if (toUpdate.length > 0) {
+      await sql`
+        UPDATE quiz_assignments
+        SET
+          "startAt"      = ${startAt ? new Date(startAt) : null},
+          "endAt"        = ${endAt   ? new Date(endAt)   : null},
+          "assignedById" = ${session.user.id}
+        WHERE id = ANY(${toUpdate}::text[])
+      `
+    }
+
+    // Batch insert new assignments
+    for (const item of toInsert) {
       await sql`
         INSERT INTO quiz_assignments
           (id, "quizId", "internId", "assignedById", "startAt", "endAt")
         VALUES
           (
-            ${id},
+            ${item.id},
             ${quizId},
-            ${iid},
+            ${item.internId},
             ${session.user.id},
             ${startAt ? new Date(startAt) : null},
             ${endAt   ? new Date(endAt)   : null}
           )
       `
-      results.push({ internId: iid, id, status: "assigned" })
     }
 
     return NextResponse.json({ message: "Assignment processed", results }, { status: 201 })
@@ -120,3 +139,4 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Failed to assign quiz" }, { status: 500 })
   }
 }
+

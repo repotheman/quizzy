@@ -88,6 +88,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
   },
   session: {
     strategy: "jwt",
+    maxAge: 8 * 60 * 60, // 8 hours — expires after a full work day
   },
   trustHost: true,
   basePath: "/api/auth",

@@ -46,7 +46,7 @@ export async function POST(
     const timeLimitSeconds = Number(attempt.timeLimitMinutes) * 60
     const elapsedSeconds   = Number(attempt.elapsed_seconds)
 
-    if (elapsedSeconds > timeLimitSeconds) {
+    if (elapsedSeconds >= timeLimitSeconds) {
       return NextResponse.json({ error: "Time limit expired" }, { status: 403 })
     }
 

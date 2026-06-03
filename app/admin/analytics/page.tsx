@@ -1,5 +1,7 @@
 import { sql } from "@/lib/db"
 import { auth } from "@/lib/auth"
+export const dynamic = 'force-dynamic'
+
 import { redirect } from "next/navigation"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -11,125 +13,136 @@ import {
   TrendingUp, Users, Trophy, Target, AlertTriangle,
   Clock, CheckCircle, XCircle, BarChart3, Flame, Snowflake,
 } from "lucide-react"
-import {
-  InternPerformanceChart,
-  TrendlineChart,
-  InternProgressChart,
-} from "./charts"
+import nextDynamic from "next/dynamic"
+
+const InternPerformanceChart = nextDynamic(
+  () => import("./charts").then((mod) => mod.InternPerformanceChart)
+)
+const TrendlineChart = nextDynamic(
+  () => import("./charts").then((mod) => mod.TrendlineChart)
+)
+const InternProgressChart = nextDynamic(
+  () => import("./charts").then((mod) => mod.InternProgressChart)
+)
 
 // ─── Data fetching ────────────────────────────────────────────────────────────
 
 async function getAnalyticsData() {
-  // Platform-wide stats
-  const [platform] = await sql`
-    SELECT
-      (SELECT COUNT(*) FROM users WHERE role = 'INTERN')                                      AS total_interns,
-      (SELECT COUNT(*) FROM quizzes WHERE "isPublished" = true)                               AS published_quizzes,
-      (SELECT COUNT(*) FROM quiz_attempts WHERE status != 'IN_PROGRESS')                      AS total_attempts,
-      (SELECT COUNT(*) FROM quiz_attempts WHERE passed = true)                                AS total_passed,
-      (SELECT COALESCE(AVG(percentage), 0) FROM quiz_attempts WHERE status != 'IN_PROGRESS')  AS avg_score,
-      (SELECT COALESCE(AVG("timeSpentSeconds"), 0) FROM quiz_attempts WHERE status != 'IN_PROGRESS' AND "timeSpentSeconds" IS NOT NULL) AS avg_time,
-      (SELECT COUNT(*) FROM violations)                                                       AS total_violations,
-      (SELECT COUNT(*) FROM quiz_attempts WHERE status = 'TERMINATED')                        AS terminated_count,
-      (SELECT COUNT(*) FROM quiz_attempts WHERE status = 'TIMED_OUT')                         AS timed_out_count
-  `
-
-  // Intern performance — latest score per intern (for bar chart)
-  const internPerformance = await sql`
-    SELECT
-      u.name,
-      u.id,
-      COALESCE(AVG(qa.percentage) FILTER (WHERE qa.status != 'IN_PROGRESS'), 0) AS avg_score,
-      MAX(qa.percentage) FILTER (WHERE qa.status != 'IN_PROGRESS')              AS best_score,
-      COUNT(qa.id) FILTER (WHERE qa.status != 'IN_PROGRESS')                    AS attempts,
-      COUNT(qa.id) FILTER (WHERE qa.passed = true)                              AS passed,
-      SUM(qa.violations)                                                         AS total_violations,
-      COUNT(qa.id) FILTER (WHERE qa.status = 'TERMINATED')                      AS terminated
-    FROM users u
-    LEFT JOIN quiz_attempts qa ON qa."internId" = u.id
-    WHERE u.role = 'INTERN'
-    GROUP BY u.id, u.name
-    ORDER BY avg_score DESC NULLS LAST
-  `
-
-  // Trendline — avg/min/max score per quiz over time
-  const trendline = await sql`
-    SELECT
-      q.title                                                                     AS quiz,
-      q."createdAt"                                                               AS created_at,
-      ROUND(AVG(qa.percentage)::numeric, 1)                                       AS avg,
-      ROUND(MIN(qa.percentage)::numeric, 1)                                       AS min,
-      ROUND(MAX(qa.percentage)::numeric, 1)                                       AS max,
-      COUNT(qa.id)                                                                AS attempts
-    FROM quizzes q
-    JOIN quiz_attempts qa ON qa."quizId" = q.id AND qa.status != 'IN_PROGRESS'
-    WHERE q."isPublished" = true
-    GROUP BY q.id, q.title, q."createdAt"
-    ORDER BY q."createdAt" ASC
-  `
-
-  // Intern progress — each intern's score per quiz (for multi-line chart)
-  const internProgress = await sql`
-    SELECT
-      u.id   AS intern_id,
-      u.name AS intern_name,
-      q.title AS quiz,
-      q."createdAt",
-      qa.percentage,
-      qa.passed
-    FROM quiz_attempts qa
-    JOIN users u ON u.id = qa."internId"
-    JOIN quizzes q ON q.id = qa."quizId"
-    WHERE qa.status != 'IN_PROGRESS'
-    AND   q."isPublished" = true
-    ORDER BY q."createdAt" ASC, u.name ASC
-  `
-
-  // Test difficulty
-  const difficulty = await sql`
-    SELECT
-      q.id,
-      q.title,
-      ROUND(AVG(qa.percentage)::numeric, 1)  AS avg_score,
-      ROUND(MIN(qa.percentage)::numeric, 1)  AS min_score,
-      ROUND(MAX(qa.percentage)::numeric, 1)  AS max_score,
-      COUNT(qa.id)                           AS attempts
-    FROM quizzes q
-    JOIN quiz_attempts qa ON qa."quizId" = q.id AND qa.status != 'IN_PROGRESS'
-    WHERE q."isPublished" = true
-    GROUP BY q.id, q.title
-    HAVING COUNT(qa.id) >= 1
-    ORDER BY avg_score ASC
-  `
-
-  // Violation breakdown
-  const violationBreakdown = await sql`
-    SELECT type, COUNT(*) AS count
-    FROM violations
-    GROUP BY type
-    ORDER BY count DESC
-  `
-
-  // Per-quiz stats for table
-  const quizStats = await sql`
-    SELECT
-      q.id, q.title, q."passingScore", q."timeLimitMinutes", q."resultsPublishedAt",
-      COUNT(qa.id)                                                                           AS attempts,
-      COUNT(qa.id) FILTER (WHERE qa.passed = true)                                          AS passed,
-      COUNT(qa.id) FILTER (WHERE qa.status = 'TERMINATED')                                  AS terminated,
-      COUNT(qa.id) FILTER (WHERE qa.status = 'TIMED_OUT')                                   AS timed_out,
-      COALESCE(AVG(qa.percentage) FILTER (WHERE qa.status != 'IN_PROGRESS'), 0)             AS avg_score,
-      COALESCE(MIN(qa.percentage) FILTER (WHERE qa.status != 'IN_PROGRESS'), 0)             AS min_score,
-      COALESCE(MAX(qa.percentage) FILTER (WHERE qa.status != 'IN_PROGRESS'), 0)             AS max_score,
-      COALESCE(AVG(qa."timeSpentSeconds") FILTER (WHERE qa."timeSpentSeconds" IS NOT NULL), 0) AS avg_time,
-      (SELECT COUNT(*) FROM quiz_assignments WHERE "quizId" = q.id)                         AS assigned,
-      (SELECT COUNT(*) FROM quiz_assignments WHERE "quizId" = q.id AND "joinedAt" IS NOT NULL) AS joined
-    FROM quizzes q
-    LEFT JOIN quiz_attempts qa ON qa."quizId" = q.id AND qa.status != 'IN_PROGRESS'
-    WHERE q."isPublished" = true
-    GROUP BY q.id, q.title, q."passingScore", q."timeLimitMinutes", q."resultsPublishedAt"
-    ORDER BY attempts DESC, q."createdAt" DESC
-  `
+  // Run all independent queries concurrently instead of sequentially
+  const [
+    [platform],
+    internPerformance,
+    trendline,
+    internProgress,
+    difficulty,
+    violationBreakdown,
+    quizStats,
+  ] = await Promise.all([
+    // Platform-wide stats
+    sql`
+      SELECT
+        (SELECT COUNT(*) FROM users WHERE role = 'INTERN')                                      AS total_interns,
+        (SELECT COUNT(*) FROM quizzes WHERE "isPublished" = true)                               AS published_quizzes,
+        (SELECT COUNT(*) FROM quiz_attempts WHERE status != 'IN_PROGRESS')                      AS total_attempts,
+        (SELECT COUNT(*) FROM quiz_attempts WHERE passed = true)                                AS total_passed,
+        (SELECT COALESCE(AVG(percentage), 0) FROM quiz_attempts WHERE status != 'IN_PROGRESS')  AS avg_score,
+        (SELECT COALESCE(AVG("timeSpentSeconds"), 0) FROM quiz_attempts WHERE status != 'IN_PROGRESS' AND "timeSpentSeconds" IS NOT NULL) AS avg_time,
+        (SELECT COUNT(*) FROM violations)                                                       AS total_violations,
+        (SELECT COUNT(*) FROM quiz_attempts WHERE status = 'TERMINATED')                        AS terminated_count,
+        (SELECT COUNT(*) FROM quiz_attempts WHERE status = 'TIMED_OUT')                         AS timed_out_count
+    `,
+    // Intern performance — latest score per intern (for bar chart)
+    sql`
+      SELECT
+        u.name,
+        u.id,
+        COALESCE(AVG(qa.percentage) FILTER (WHERE qa.status != 'IN_PROGRESS'), 0) AS avg_score,
+        MAX(qa.percentage) FILTER (WHERE qa.status != 'IN_PROGRESS')              AS best_score,
+        COUNT(qa.id) FILTER (WHERE qa.status != 'IN_PROGRESS')                    AS attempts,
+        COUNT(qa.id) FILTER (WHERE qa.passed = true)                              AS passed,
+        SUM(qa.violations)                                                         AS total_violations,
+        COUNT(qa.id) FILTER (WHERE qa.status = 'TERMINATED')                      AS terminated
+      FROM users u
+      LEFT JOIN quiz_attempts qa ON qa."internId" = u.id
+      WHERE u.role = 'INTERN'
+      GROUP BY u.id, u.name
+      ORDER BY avg_score DESC NULLS LAST
+    `,
+    // Trendline — avg/min/max score per quiz over time
+    sql`
+      SELECT
+        q.title                                                                     AS quiz,
+        q."createdAt"                                                               AS created_at,
+        ROUND(AVG(qa.percentage)::numeric, 1)                                       AS avg,
+        ROUND(MIN(qa.percentage)::numeric, 1)                                       AS min,
+        ROUND(MAX(qa.percentage)::numeric, 1)                                       AS max,
+        COUNT(qa.id)                                                                AS attempts
+      FROM quizzes q
+      JOIN quiz_attempts qa ON qa."quizId" = q.id AND qa.status != 'IN_PROGRESS'
+      WHERE q."isPublished" = true
+      GROUP BY q.id, q.title, q."createdAt"
+      ORDER BY q."createdAt" ASC
+    `,
+    // Intern progress — each intern's score per quiz (for multi-line chart)
+    sql`
+      SELECT
+        u.id   AS intern_id,
+        u.name AS intern_name,
+        q.title AS quiz,
+        q."createdAt",
+        qa.percentage,
+        qa.passed
+      FROM quiz_attempts qa
+      JOIN users u ON u.id = qa."internId"
+      JOIN quizzes q ON q.id = qa."quizId"
+      WHERE qa.status != 'IN_PROGRESS'
+      AND   q."isPublished" = true
+      ORDER BY q."createdAt" ASC, u.name ASC
+    `,
+    // Test difficulty
+    sql`
+      SELECT
+        q.id,
+        q.title,
+        ROUND(AVG(qa.percentage)::numeric, 1)  AS avg_score,
+        ROUND(MIN(qa.percentage)::numeric, 1)  AS min_score,
+        ROUND(MAX(qa.percentage)::numeric, 1)  AS max_score,
+        COUNT(qa.id)                           AS attempts
+      FROM quizzes q
+      JOIN quiz_attempts qa ON qa."quizId" = q.id AND qa.status != 'IN_PROGRESS'
+      WHERE q."isPublished" = true
+      GROUP BY q.id, q.title
+      HAVING COUNT(qa.id) >= 1
+      ORDER BY avg_score ASC
+    `,
+    // Violation breakdown
+    sql`
+      SELECT type, COUNT(*) AS count
+      FROM violations
+      GROUP BY type
+      ORDER BY count DESC
+    `,
+    // Per-quiz stats for table
+    sql`
+      SELECT
+        q.id, q.title, q."passingScore", q."timeLimitMinutes", q."resultsPublishedAt",
+        COUNT(qa.id)                                                                           AS attempts,
+        COUNT(qa.id) FILTER (WHERE qa.passed = true)                                          AS passed,
+        COUNT(qa.id) FILTER (WHERE qa.status = 'TERMINATED')                                  AS terminated,
+        COUNT(qa.id) FILTER (WHERE qa.status = 'TIMED_OUT')                                   AS timed_out,
+        COALESCE(AVG(qa.percentage) FILTER (WHERE qa.status != 'IN_PROGRESS'), 0)             AS avg_score,
+        COALESCE(MIN(qa.percentage) FILTER (WHERE qa.status != 'IN_PROGRESS'), 0)             AS min_score,
+        COALESCE(MAX(qa.percentage) FILTER (WHERE qa.status != 'IN_PROGRESS'), 0)             AS max_score,
+        COALESCE(AVG(qa."timeSpentSeconds") FILTER (WHERE qa."timeSpentSeconds" IS NOT NULL), 0) AS avg_time,
+        (SELECT COUNT(*) FROM quiz_assignments WHERE "quizId" = q.id)                         AS assigned,
+        (SELECT COUNT(*) FROM quiz_assignments WHERE "quizId" = q.id AND "joinedAt" IS NOT NULL) AS joined
+      FROM quizzes q
+      LEFT JOIN quiz_attempts qa ON qa."quizId" = q.id AND qa.status != 'IN_PROGRESS'
+      WHERE q."isPublished" = true
+      GROUP BY q.id, q.title, q."passingScore", q."timeLimitMinutes", q."resultsPublishedAt"
+      ORDER BY attempts DESC, q."createdAt" DESC
+    `,
+  ])
 
   return { platform, internPerformance, trendline, internProgress, difficulty, violationBreakdown, quizStats }
 }

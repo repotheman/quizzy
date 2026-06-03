@@ -1,4 +1,7 @@
+export const dynamic = 'force-dynamic'
+
 import Link from "next/link"
+import { redirect } from "next/navigation"
 import { auth } from "@/lib/auth"
 import { sql } from "@/lib/db"
 import { Button } from "@/components/ui/button"
@@ -29,7 +32,8 @@ async function getQuizzes(adminId: string) {
 
 export default async function QuizzesPage() {
   const session = await auth()
-  const quizzes = await getQuizzes(session!.user.id)
+  if (!session?.user || session.user.role !== "ADMIN") redirect("/login")
+  const quizzes = await getQuizzes(session.user.id)
 
   return (
     <div className="space-y-6">

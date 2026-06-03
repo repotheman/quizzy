@@ -13,22 +13,62 @@ export async function GET(
 
   const { quizId } = await params
 
-  const [quiz] = await sql`SELECT id FROM quizzes WHERE id = ${quizId}`
+  const [quiz] = await sql`SELECT id FROM quizzes WHERE id = ${quizId} AND "createdById" = ${session.user.id}`
   if (!quiz) return NextResponse.json({ error: "Quiz not found" }, { status: 404 })
 
-  const questions = await sql`
-    SELECT * FROM questions WHERE "quizId" = ${quizId} ORDER BY "order" ASC
+  // Single query — join questions with their options, then reshape in JS
+  const rows = await sql`
+    SELECT
+      q.id           AS question_id,
+      q.type,
+      q.text,
+      q.points,
+      q."order"      AS question_order,
+      q."createdAt"  AS question_created_at,
+      q."updatedAt"  AS question_updated_at,
+      o.id           AS option_id,
+      o.text         AS option_text,
+      o."isCorrect"  AS option_is_correct,
+      o."order"      AS option_order
+    FROM questions q
+    LEFT JOIN options o ON o."questionId" = q.id
+    WHERE q."quizId" = ${quizId}
+    ORDER BY q."order" ASC, o."order" ASC
   `
-  const questionsWithOptions = await Promise.all(
-    questions.map(async (q) => {
-      const options = await sql`
-        SELECT * FROM options WHERE "questionId" = ${q.id} ORDER BY "order" ASC
-      `
-      return { ...q, options }
-    })
-  )
 
-  return NextResponse.json(questionsWithOptions)
+  // Reshape flat rows into nested questions-with-options
+  const questionsMap = new Map<string, {
+    id: string; type: string; text: string; points: number; order: number;
+    createdAt: unknown; updatedAt: unknown; quizId: string;
+    options: { id: string; text: string; isCorrect: boolean; order: number }[]
+  }>()
+
+  for (const row of rows) {
+    const qid = row.question_id as string
+    if (!questionsMap.has(qid)) {
+      questionsMap.set(qid, {
+        id: qid,
+        quizId,
+        type: row.type as string,
+        text: row.text as string,
+        points: Number(row.points),
+        order: Number(row.question_order),
+        createdAt: row.question_created_at,
+        updatedAt: row.question_updated_at,
+        options: [],
+      })
+    }
+    if (row.option_id) {
+      questionsMap.get(qid)!.options.push({
+        id: row.option_id as string,
+        text: row.option_text as string,
+        isCorrect: row.option_is_correct as boolean,
+        order: Number(row.option_order),
+      })
+    }
+  }
+
+  return NextResponse.json([...questionsMap.values()])
 }
 
 export async function POST(
@@ -43,7 +83,7 @@ export async function POST(
   const { quizId } = await params
 
   try {
-    const [quiz] = await sql`SELECT id FROM quizzes WHERE id = ${quizId}`
+    const [quiz] = await sql`SELECT id FROM quizzes WHERE id = ${quizId} AND "createdById" = ${session.user.id}`
     if (!quiz) return NextResponse.json({ error: "Quiz not found" }, { status: 404 })
 
     const { type, text, points, options } = await request.json()

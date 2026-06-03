@@ -11,7 +11,19 @@ import { TimerBar } from "./TimerBar"
 import { QuestionCard } from "./QuestionCard"
 import { CameraMonitor } from "./CameraMonitor"
 import { MonitoringDisclaimer } from "./MonitoringDisclaimer"
-import { ChevronLeft, ChevronRight, AlertTriangle, Maximize2, Loader2 } from "lucide-react"
+import {
+  ChevronLeft,
+  ChevronRight,
+  AlertTriangle,
+  Maximize2,
+  Loader2,
+  CheckCircle2,
+  Circle,
+  Send,
+  Bookmark,
+  BookmarkCheck,
+  Eye,
+} from "lucide-react"
 import { cn } from "@/lib/utils"
 
 interface Question {
@@ -45,17 +57,21 @@ export function ExamShell({
 }: ExamShellProps) {
   const router = useRouter()
 
-  const [currentIndex, setCurrentIndex]         = useState(0)
-  const [answers, setAnswers]                   = useState<Record<string, string>>(existingAnswers)
-  const [violations, setViolations]             = useState(initialViolations)
-  const [timeRemaining, setTimeRemaining]       = useState(initialSeconds)
+  const [currentIndex, setCurrentIndex]       = useState(0)
+  const [answers, setAnswers]                 = useState<Record<string, string>>(existingAnswers)
+  const [markedForReview, setMarkedForReview] = useState<Set<string>>(new Set())
+  const [visitedQuestions, setVisitedQuestions] = useState<Set<string>>(
+    new Set(existingAnswers ? Object.keys(existingAnswers) : [questions[0]?.id ?? ""])
+  )
+  const [violations, setViolations]           = useState(initialViolations)
+  const [timeRemaining, setTimeRemaining]     = useState(initialSeconds)
   const [showSubmitDialog, setShowSubmitDialog] = useState(false)
-  const [isSubmitting, setIsSubmitting]         = useState(false)
-  const [fullscreenError, setFullscreenError]   = useState<string | null>(null)
+  const [isSubmitting, setIsSubmitting]       = useState(false)
+  const [fullscreenError, setFullscreenError] = useState<string | null>(null)
   const [hasAcceptedMonitoring, setHasAcceptedMonitoring] = useState(false)
-  const isSubmittingRef                         = useRef(false)
+  const isSubmittingRef = useRef(false)
 
-  // ── Submit ────────────────────────────────────────────────────────────────
+  // ── Submit ─────────────────────────────────────────────────────────────────
   const submitAttempt = useCallback(async (auto: boolean, reason?: string) => {
     if (isSubmittingRef.current) return
     isSubmittingRef.current = true
@@ -84,14 +100,14 @@ export function ExamShell({
     }
   }, [attemptId, router])
 
-  // ── Timer ─────────────────────────────────────────────────────────────────
+  // ── Timer ──────────────────────────────────────────────────────────────────
   useTimer({
     initialSeconds,
     onTick: setTimeRemaining,
     onExpire: () => submitAttempt(true, "TIMED_OUT"),
   })
 
-  // ── Proctoring ────────────────────────────────────────────────────────────
+  // ── Proctoring ─────────────────────────────────────────────────────────────
   const handleViolation = useCallback((type: ViolationType, newCount: number) => {
     setViolations(newCount)
     const label = type.replace(/_/g, " ").toLowerCase()
@@ -103,20 +119,41 @@ export function ExamShell({
 
   const { isFullscreen, requestFullscreen } = useExamProctor({
     attemptId,
-    initialViolations: violations,
+    initialViolations,  // pass the PROP, not the violations state — prevents countRef re-init on re-render
     onViolation: handleViolation,
-    enabled: true,
+    enabled: hasAcceptedMonitoring, // only track after intern accepts monitoring disclaimer
   })
 
   const handleEnterFullscreen = useCallback(async () => {
     setFullscreenError(null)
     const ok = await requestFullscreen()
     if (!ok) {
-      setFullscreenError("Browser blocked fullscreen. Click again or allow it in your browser settings.")
+      setFullscreenError(
+        "Browser blocked fullscreen. Click again or allow it in your browser settings."
+      )
     }
   }, [requestFullscreen])
 
-  // ── Answer saving ─────────────────────────────────────────────────────────
+  // ── Navigation ─────────────────────────────────────────────────────────────
+  const navigateTo = useCallback((idx: number) => {
+    setCurrentIndex(idx)
+    const q = questions[idx]
+    if (q) setVisitedQuestions(prev => new Set(prev).add(q.id))
+  }, [questions])
+
+  // ── Mark for review ────────────────────────────────────────────────────────
+  const toggleReview = useCallback(() => {
+    const qId = questions[currentIndex]?.id
+    if (!qId) return
+    setMarkedForReview(prev => {
+      const next = new Set(prev)
+      if (next.has(qId)) { next.delete(qId); toast.info("Removed from review list") }
+      else               { next.add(qId);    toast.info("Marked for review") }
+      return next
+    })
+  }, [currentIndex, questions])
+
+  // ── Answer saving ──────────────────────────────────────────────────────────
   const handleSelectOption = useCallback(async (optionId: string) => {
     const question = questions[currentIndex]
     if (!question) return
@@ -136,7 +173,7 @@ export function ExamShell({
     }
   }, [attemptId, currentIndex, questions])
 
-  // ── No questions guard ────────────────────────────────────────────────────
+  // ── Guards ─────────────────────────────────────────────────────────────────
   if (!questions.length) {
     return (
       <div className="dark min-h-screen bg-background text-foreground flex items-center justify-center">
@@ -151,37 +188,28 @@ export function ExamShell({
   }
 
   const currentQuestion = questions[currentIndex]
-  const isLastQuestion  = currentIndex === questions.length - 1
   const answeredCount   = Object.keys(answers).length
+  const reviewCount     = markedForReview.size
+  const isLastQuestion  = currentIndex === questions.length - 1
+  const isMarked        = markedForReview.has(currentQuestion?.id ?? "")
 
   return (
-    <div className="dark min-h-screen bg-background text-foreground flex flex-col select-none relative">
+    // Root: full viewport, dark, fixed — nothing scrolls at the page level
+    <div className="dark h-screen bg-background text-foreground flex flex-col select-none overflow-hidden">
 
-      {/* ── Screen Recording Border — red border around entire screen when in fullscreen ── */}
+      {/* ── Red border recording indicator (inside layout, not overlapping header) ── */}
       {isFullscreen && hasAcceptedMonitoring && (
-        <>
-          {/* Red border */}
-          <div className="fixed inset-0 pointer-events-none z-[100]">
-            <div className="absolute inset-0 border-[4px] border-red-500 animate-pulse" />
-          </div>
-          
-          {/* Screen Recording Indicator - Top Left */}
-          <div className="fixed top-4 left-4 z-[100] flex items-center gap-2 bg-red-500 text-white px-3 py-1.5 rounded-full shadow-lg animate-pulse">
-            <div className="size-2 bg-white rounded-full animate-ping" />
-            <span className="text-xs font-bold">SCREEN RECORDING</span>
-          </div>
-        </>
+        <div className="fixed inset-0 pointer-events-none z-[100]">
+          <div className="absolute inset-0 border-[3px] border-red-500/70 rounded-none" />
+        </div>
       )}
 
-      {/* ── Monitoring Disclaimer — shows first before exam starts ── */}
+      {/* ── Monitoring disclaimer modal ── */}
       {!hasAcceptedMonitoring && (
         <MonitoringDisclaimer onAccept={() => setHasAcceptedMonitoring(true)} />
       )}
 
-      {/* ── Camera Monitor — always visible when in fullscreen ── */}
-      <CameraMonitor isActive={isFullscreen && hasAcceptedMonitoring} />
-
-      {/* ── Fullscreen overlay ── */}
+      {/* ── Fullscreen required overlay ── */}
       {!isFullscreen && hasAcceptedMonitoring && (
         <div className="fixed inset-0 z-[49] flex items-center justify-center bg-background/95 backdrop-blur-sm px-4">
           <div className="w-full max-w-md rounded-2xl border bg-card p-8 shadow-xl space-y-5 text-center">
@@ -214,17 +242,37 @@ export function ExamShell({
         </div>
       )}
 
-      {/* ── Top bar — always visible ── */}
-      <header className="sticky top-0 z-50 border-b bg-background">
-        <div className="flex items-center justify-between h-14 px-4 gap-4">
-          <span className="text-sm font-medium truncate max-w-[180px] shrink-0">{quizTitle}</span>
-          <TimerBar timeRemaining={timeRemaining} totalTime={timeLimitMinutes * 60} />
-          <div className="flex items-center gap-3 shrink-0">
-            <span className="text-sm text-muted-foreground">
-              {currentIndex + 1} / {questions.length}
+      {/* ── Top bar — fixed height, never scrolls ── */}
+      <header className="shrink-0 z-50 border-b bg-background/95 backdrop-blur-sm">
+        <div className="flex items-center h-14 px-4 gap-3">
+          {/* Quiz title — shrinks if needed */}
+          <span className="text-sm font-semibold truncate min-w-0 flex-1">{quizTitle}</span>
+
+          {/* Timer centred */}
+          <div className="shrink-0">
+            <TimerBar timeRemaining={timeRemaining} totalTime={timeLimitMinutes * 60} />
+          </div>
+
+          {/* Right badges */}
+          <div className="flex items-center gap-2 shrink-0">
+            {/* REC indicator — right side, not centre */}
+            {isFullscreen && hasAcceptedMonitoring && (
+              <span className="hidden sm:flex items-center gap-1 bg-red-600 text-white px-2 py-0.5 rounded-full text-[10px] font-bold tracking-wide">
+                <span className="size-1.5 bg-white rounded-full animate-ping" />
+                REC
+              </span>
+            )}
+            <span className="text-xs text-muted-foreground hidden md:block tabular-nums">
+              {answeredCount}/{questions.length}
             </span>
+            {reviewCount > 0 && (
+              <Badge variant="outline" className="gap-1 border-yellow-500/50 text-yellow-400 hidden sm:flex">
+                <Bookmark className="size-3" />
+                {reviewCount}
+              </Badge>
+            )}
             {violations > 0 && (
-              <Badge variant="destructive" className="flex items-center gap-1">
+              <Badge variant="destructive" className="gap-1">
                 <AlertTriangle className="size-3" />
                 {violations}
               </Badge>
@@ -233,104 +281,302 @@ export function ExamShell({
         </div>
       </header>
 
-      {/* ── Question area — blurred when not in fullscreen ── */}
-      <main className={cn(
-        "flex-1 flex items-center justify-center py-8 px-4",
-        !isFullscreen && "pointer-events-none select-none blur-sm brightness-50"
+      {/* ── Body: question area + sidebar, fills remaining height ── */}
+      <div className={cn(
+        "flex flex-1 min-h-0", // min-h-0 is critical — lets flex children shrink below content size
+        !isFullscreen && hasAcceptedMonitoring && "pointer-events-none select-none blur-sm brightness-50"
       )}>
-        <div className="w-full max-w-2xl">
-          <QuestionCard
-            questionNumber={currentIndex + 1}
-            totalQuestions={questions.length}
-            text={currentQuestion.text}
-            type={currentQuestion.type}
-            points={currentQuestion.points}
-            options={currentQuestion.options}
-            selectedOptionId={answers[currentQuestion.id] ?? null}
-            onSelectOption={handleSelectOption}
-          />
-        </div>
-      </main>
 
-      {/* ── Bottom bar — always interactive ── */}
-      <footer className="sticky bottom-0 border-t bg-background">
-        <div className="flex items-center justify-between h-16 px-4">
-          <Button
-            variant="outline"
-            onClick={() => setCurrentIndex(i => Math.max(0, i - 1))}
-            disabled={currentIndex === 0}
-          >
-            <ChevronLeft className="mr-2 size-4" /> Previous
-          </Button>
+        {/* ── Question area — scrollable column ── */}
+        <main className="flex-1 flex flex-col min-w-0 min-h-0">
 
-          <div className="flex items-center gap-1.5 flex-wrap justify-center max-w-[50%]">
-            {questions.map((q, idx) => (
-              <button
-                key={q.id}
-                onClick={() => setCurrentIndex(idx)}
-                className={cn(
-                  "size-2.5 rounded-full transition-colors",
-                  idx === currentIndex
-                    ? "bg-primary"
-                    : answers[q.id]
-                    ? "bg-primary/50"
-                    : "bg-muted-foreground/30"
-                )}
-                aria-label={`Go to question ${idx + 1}`}
+          {/* Scrollable question content */}
+          <div className="flex-1 overflow-y-auto">
+            <div className="flex justify-center py-6 px-4">
+              <div className="w-full max-w-2xl space-y-3">
+                <QuestionCard
+                  questionNumber={currentIndex + 1}
+                  totalQuestions={questions.length}
+                  text={currentQuestion.text}
+                  type={currentQuestion.type}
+                  points={currentQuestion.points}
+                  options={currentQuestion.options}
+                  selectedOptionId={answers[currentQuestion.id] ?? null}
+                  onSelectOption={handleSelectOption}
+                />
+
+                {/* Mark for Review */}
+                <div className="flex justify-end pb-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={toggleReview}
+                    className={cn(
+                      "gap-2 transition-colors",
+                      isMarked
+                        ? "border-yellow-500/60 bg-yellow-500/10 text-yellow-400 hover:bg-yellow-500/20 hover:border-yellow-500"
+                        : "text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    {isMarked ? (
+                      <><BookmarkCheck className="size-4" /> Marked for Review</>
+                    ) : (
+                      <><Bookmark className="size-4" /> Mark for Review</>
+                    )}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* ── Bottom nav — always visible, never pushed off screen ── */}
+          <div className="shrink-0 border-t bg-background px-4 h-14 flex items-center justify-between gap-4">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => navigateTo(Math.max(0, currentIndex - 1))}
+              disabled={currentIndex === 0}
+            >
+              <ChevronLeft className="mr-1 size-4" /> Previous
+            </Button>
+
+            <span className="text-sm text-muted-foreground font-medium tabular-nums">
+              {currentIndex + 1} / {questions.length}
+            </span>
+
+            {isLastQuestion ? (
+              <Button
+                size="sm"
+                onClick={() => setShowSubmitDialog(true)}
+                disabled={isSubmitting}
+                className="bg-green-600 hover:bg-green-700 text-white"
+              >
+                <Send className="mr-1.5 size-3.5" /> Submit Exam
+              </Button>
+            ) : (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => navigateTo(Math.min(questions.length - 1, currentIndex + 1))}
+              >
+                Next <ChevronRight className="ml-1 size-4" />
+              </Button>
+            )}
+          </div>
+        </main>
+
+        {/* ── Sidebar — fixed width, independent scroll ── */}
+        <aside className="w-60 shrink-0 border-l bg-background flex flex-col min-h-0">
+
+          {/* Header */}
+          <div className="shrink-0 px-4 py-2.5 border-b">
+            <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+              Question Palette
+            </p>
+          </div>
+
+          {/* Progress summary */}
+          <div className="shrink-0 px-3 py-2.5 border-b space-y-1.5">
+            <div className="flex items-center justify-between text-xs">
+              <span className="flex items-center gap-1.5 text-green-400">
+                <CheckCircle2 className="size-3" /> Answered
+              </span>
+              <span className="font-semibold tabular-nums">{answeredCount}</span>
+            </div>
+            <div className="flex items-center justify-between text-xs">
+              <span className="flex items-center gap-1.5 text-muted-foreground">
+                <Circle className="size-3" /> Unanswered
+              </span>
+              <span className="font-semibold tabular-nums text-muted-foreground">
+                {questions.length - answeredCount}
+              </span>
+            </div>
+            {reviewCount > 0 && (
+              <div className="flex items-center justify-between text-xs">
+                <span className="flex items-center gap-1.5 text-yellow-400">
+                  <Bookmark className="size-3" /> Review
+                </span>
+                <span className="font-semibold tabular-nums text-yellow-400">{reviewCount}</span>
+              </div>
+            )}
+            <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+              <div
+                className="h-full bg-green-500 rounded-full transition-all duration-300"
+                style={{ width: `${(answeredCount / questions.length) * 100}%` }}
               />
+            </div>
+          </div>
+
+          {/* Question grid — scrollable */}
+          <div className="flex-1 overflow-y-auto p-2.5">
+            <div className="grid grid-cols-5 gap-1">
+              {questions.map((q, idx) => {
+                const isAnswered = !!answers[q.id]
+                const isReview   = markedForReview.has(q.id)
+                const isVisited  = visitedQuestions.has(q.id)
+                const isCurrent  = idx === currentIndex
+
+                let stateLabel = "Not visited"
+                if (isAnswered && isReview) stateLabel = "Answered & for review"
+                else if (isAnswered)        stateLabel = "Answered"
+                else if (isReview)          stateLabel = "For review"
+                else if (isVisited)         stateLabel = "Visited, unanswered"
+
+                return (
+                  <button
+                    key={q.id}
+                    onClick={() => navigateTo(idx)}
+                    title={`Q${idx + 1}: ${stateLabel}`}
+                    className={cn(
+                      "relative h-8 w-full rounded text-xs font-semibold transition-all duration-150",
+                      "border focus:outline-none focus-visible:ring-2 focus-visible:ring-primary",
+                      isCurrent && "ring-2 ring-primary ring-offset-1 ring-offset-background",
+                      // Answered + review
+                      isAnswered && isReview && !isCurrent && "bg-purple-600/20 border-purple-500/50 text-purple-300 hover:bg-purple-600/30",
+                      isAnswered && isReview && isCurrent  && "bg-purple-600/30 border-purple-400 text-purple-200",
+                      // Answered
+                      isAnswered && !isReview && !isCurrent && "bg-green-600/20 border-green-600/40 text-green-400 hover:bg-green-600/30",
+                      isAnswered && !isReview && isCurrent  && "bg-green-600/30 border-green-500 text-green-300",
+                      // Review only
+                      !isAnswered && isReview && !isCurrent && "bg-yellow-500/15 border-yellow-500/50 text-yellow-400 hover:bg-yellow-500/25",
+                      !isAnswered && isReview && isCurrent  && "bg-yellow-500/25 border-yellow-400 text-yellow-300",
+                      // Visited unanswered
+                      !isAnswered && !isReview && isVisited && !isCurrent && "bg-orange-500/10 border-orange-500/30 text-orange-300 hover:bg-orange-500/20",
+                      !isAnswered && !isReview && isVisited && isCurrent  && "bg-primary/10 border-primary/50 text-primary",
+                      // Not visited
+                      !isAnswered && !isReview && !isVisited && !isCurrent && "bg-muted/40 border-border text-muted-foreground hover:bg-muted/70 hover:text-foreground",
+                      !isAnswered && !isReview && !isVisited && isCurrent  && "bg-primary/10 border-primary/50 text-primary",
+                    )}
+                  >
+                    {idx + 1}
+                    {isAnswered && !isReview && <span className="absolute top-0.5 right-0.5 size-1.5 rounded-full bg-green-500" />}
+                    {isReview && !isAnswered  && <span className="absolute top-0.5 right-0.5 size-1.5 rounded-full bg-yellow-400" />}
+                    {isReview && isAnswered   && <span className="absolute top-0.5 right-0.5 size-1.5 rounded-full bg-purple-400" />}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* Legend */}
+          <div className="shrink-0 px-3 py-2 border-t space-y-1">
+            <p className="text-[9px] font-semibold text-muted-foreground uppercase tracking-wider">Legend</p>
+            {[
+              { color: "bg-green-600/20 border-green-600/40",   label: "Answered" },
+              { color: "bg-yellow-500/15 border-yellow-500/50", label: "For review" },
+              { color: "bg-purple-600/20 border-purple-500/50", label: "Answered + review" },
+              { color: "bg-orange-500/10 border-orange-500/30", label: "Visited, unanswered" },
+              { color: "bg-muted/40 border-border",             label: "Not visited" },
+            ].map(({ color, label }) => (
+              <div key={label} className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+                <span className={cn("size-2.5 rounded-sm border shrink-0", color)} />
+                {label}
+              </div>
             ))}
           </div>
 
-          {isLastQuestion ? (
-            <Button onClick={() => setShowSubmitDialog(true)} disabled={isSubmitting}>
-              Submit Exam
-            </Button>
-          ) : (
+          {/* Submit button */}
+          <div className="shrink-0 p-3 border-t">
             <Button
-              variant="outline"
-              onClick={() => setCurrentIndex(i => Math.min(questions.length - 1, i + 1))}
+              className="w-full bg-green-600 hover:bg-green-700 text-white"
+              size="sm"
+              onClick={() => setShowSubmitDialog(true)}
+              disabled={isSubmitting}
             >
-              Next <ChevronRight className="ml-2 size-4" />
+              <Send className="mr-2 size-3.5" /> Submit Exam
             </Button>
-          )}
-        </div>
-      </footer>
+            {answeredCount < questions.length && (
+              <p className="text-[10px] text-center text-muted-foreground mt-1.5">
+                {questions.length - answeredCount} unanswered
+              </p>
+            )}
+          </div>
 
-      {/* ── Submit confirmation — rendered as a top-level fixed overlay ── */}
+          {/* Camera monitor — lives at the bottom of sidebar, no overlap */}
+          <CameraMonitor isActive={isFullscreen && hasAcceptedMonitoring} />
+        </aside>
+      </div>
+
+      {/* ── Submit confirmation dialog ── */}
       {showSubmitDialog && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 px-4">
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70 px-4">
           <div className="w-full max-w-md rounded-xl border bg-card p-6 shadow-2xl space-y-4">
-            <h2 className="text-lg font-semibold">Submit Exam?</h2>
-            <div className="text-sm text-muted-foreground space-y-2">
-              <p>You have answered {answeredCount} of {questions.length} questions.</p>
-              {answeredCount < questions.length && (
-                <p className="text-yellow-600 dark:text-yellow-400">
-                  {questions.length - answeredCount} question(s) left unanswered.
-                </p>
-              )}
-              <p>This cannot be undone.</p>
+            <div className="flex items-center gap-3">
+              <div className="rounded-full bg-green-500/10 p-2.5">
+                <Send className="size-5 text-green-500" />
+              </div>
+              <h2 className="text-lg font-semibold">Submit Exam?</h2>
             </div>
-            <div className="flex gap-3 justify-end">
+
+            <div className="rounded-lg border bg-muted/30 p-4 space-y-3">
+              <div className="flex justify-between text-sm">
+                <span className="flex items-center gap-2 text-green-500">
+                  <CheckCircle2 className="size-4" /> Answered
+                </span>
+                <span className="font-semibold">{answeredCount}</span>
+              </div>
+              {reviewCount > 0 && (
+                <div className="flex justify-between text-sm">
+                  <span className="flex items-center gap-2 text-yellow-400">
+                    <Bookmark className="size-4" /> Marked for review
+                  </span>
+                  <span className="font-semibold text-yellow-400">{reviewCount}</span>
+                </div>
+              )}
+              <div className="flex justify-between text-sm">
+                <span className="flex items-center gap-2 text-muted-foreground">
+                  <Circle className="size-4" /> Not answered
+                </span>
+                <span className="font-semibold text-muted-foreground">
+                  {questions.length - answeredCount}
+                </span>
+              </div>
+              <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+                <div
+                  className="h-full bg-green-500 rounded-full"
+                  style={{ width: `${(answeredCount / questions.length) * 100}%` }}
+                />
+              </div>
+            </div>
+
+            {answeredCount < questions.length && (
+              <p className="text-sm text-yellow-600 dark:text-yellow-400">
+                ⚠ You have {questions.length - answeredCount} unanswered question
+                {questions.length - answeredCount !== 1 ? "s" : ""}. Unanswered questions score 0.
+              </p>
+            )}
+            {reviewCount > 0 && (
+              <p className="text-sm text-yellow-600 dark:text-yellow-400">
+                <Eye className="inline size-3.5 mr-1" />
+                {reviewCount} question{reviewCount !== 1 ? "s are" : " is"} still marked for review.
+              </p>
+            )}
+
+            <p className="text-sm text-muted-foreground">This action cannot be undone.</p>
+
+            <div className="flex gap-3 justify-end pt-1">
               <Button
                 variant="outline"
                 onClick={() => setShowSubmitDialog(false)}
                 disabled={isSubmitting}
               >
-                Cancel
+                Go Back
               </Button>
               <Button
+                className="bg-green-600 hover:bg-green-700 text-white"
                 onClick={() => submitAttempt(false)}
                 disabled={isSubmitting}
               >
-                {isSubmitting
-                  ? <><Loader2 className="mr-2 size-4 animate-spin" /> Submitting...</>
-                  : "Submit"}
+                {isSubmitting ? (
+                  <><Loader2 className="mr-2 size-4 animate-spin" /> Submitting...</>
+                ) : (
+                  <><Send className="mr-2 size-4" /> Confirm Submit</>
+                )}
               </Button>
             </div>
           </div>
         </div>
       )}
-
     </div>
   )
 }

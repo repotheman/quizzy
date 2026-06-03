@@ -12,7 +12,6 @@ interface TimerBarProps {
 export function TimerBar({ timeRemaining, totalTime }: TimerBarProps) {
   const progress = totalTime > 0 ? (timeRemaining / totalTime) * 100 : 0
   const minutes = timeRemaining / 60
-
   const getTimerColor = () => {
     if (minutes < 1) return "text-red-500"
     if (minutes < 5) return "text-yellow-500"

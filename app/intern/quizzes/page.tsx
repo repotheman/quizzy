@@ -1,4 +1,5 @@
 import Link from "next/link"
+import { redirect } from "next/navigation"
 import { auth } from "@/lib/auth"
 import { sql } from "@/lib/db"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -32,6 +33,7 @@ async function getAssignedQuizzes(internId: string) {
         )
         FROM quiz_attempts qat
         WHERE qat."quizId" = q.id AND qat."internId" = ${internId}
+        ORDER BY qat."startedAt" DESC
         LIMIT 1
       ) AS attempt
     FROM quiz_assignments qa
@@ -44,7 +46,8 @@ async function getAssignedQuizzes(internId: string) {
 
 export default async function InternQuizzesPage() {
   const session = await auth()
-  const quizzes = await getAssignedQuizzes(session!.user.id)
+  if (!session?.user) redirect("/login")
+  const quizzes = await getAssignedQuizzes(session.user.id)
 
   return (
     <div className="space-y-6">

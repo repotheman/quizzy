@@ -31,7 +31,7 @@ export async function GET(
         MAX(qa."endAt")   AS "endAt"
       FROM quizzes q
       LEFT JOIN quiz_assignments qa ON qa."quizId" = q.id
-      WHERE q.id = ${quizId}
+      WHERE q.id = ${quizId} AND q."createdById" = ${session.user.id}
       GROUP BY q.id, q.title, q."timeLimitMinutes"
     `
 

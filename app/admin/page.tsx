@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic'
+
 import { auth } from "@/lib/auth"
 import { sql } from "@/lib/db"
 import Link from "next/link"
@@ -138,7 +140,7 @@ export default async function AdminDashboard() {
         <Card className="border-dashed hover:border-solid transition-all">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
-              <Trophy className="size-5 text-yellow-500" /> Leaderboard
+              <Trophy className="size-5 text-yellow-500" /> Results & Rankings
             </CardTitle>
             <CardDescription>
               View per-quiz rankings, attendance, and publish results to interns.
@@ -146,7 +148,7 @@ export default async function AdminDashboard() {
           </CardHeader>
           <CardContent>
             <Button asChild variant="outline" className="w-full">
-              <Link href="/admin/leaderboard">Open Leaderboard</Link>
+              <Link href="/admin/results?tab=rankings">Open Results</Link>
             </Button>
           </CardContent>
         </Card>
@@ -234,7 +236,7 @@ export default async function AdminDashboard() {
                 <CardDescription>Quizzes with completed attempts but results not yet published</CardDescription>
               </div>
               <Button variant="ghost" size="sm" asChild>
-                <Link href="/admin/leaderboard">Leaderboard</Link>
+                <Link href="/admin/results?tab=rankings">Leaderboard</Link>
               </Button>
             </div>
           </CardHeader>
@@ -255,7 +257,7 @@ export default async function AdminDashboard() {
                       </p>
                     </div>
                     <Button size="sm" variant="outline" asChild>
-                      <Link href={`/admin/leaderboard?quizId=${q.id}`}>Publish</Link>
+                      <Link href={`/admin/results?quizId=${q.id}&tab=rankings`}>Publish</Link>
                     </Button>
                   </div>
                 ))}

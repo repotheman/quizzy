@@ -72,7 +72,10 @@ export async function finalizeAttempt({
   }
 
   // ── Determine final status ─────────────────────────────────────────────────
-  const timeSpentSeconds = Number(attempt.elapsed_seconds)
+  const timeSpentSeconds = Math.min(
+    Number(attempt.elapsed_seconds),
+    Number(attempt.timeLimitMinutes) * 60  // cap at limit — prevents inflated times
+  )
   const timeLimitSeconds = Number(attempt.timeLimitMinutes) * 60
 
   let finalStatus: string = "SUBMITTED"
@@ -256,7 +259,9 @@ export async function overrideScore(
     throw { status: 422, message: `scoreOverride must be between 0 and ${totalPoints}` }
   }
 
-  const percentage = Math.round((scoreOverride / totalPoints) * 1000) / 10
+  const percentage = totalPoints > 0
+    ? Math.round((scoreOverride / totalPoints) * 1000) / 10
+    : 0
   const passed = percentage >= Number(attempt.passingScore)
   const previousScore = Number(attempt.previousScore)
 
@@ -316,13 +321,13 @@ export async function unpublishResults(
   quizId: string,
   adminId: string
 ): Promise<void> {
-  // Load the quiz to check existence and publication state
+  // Load the quiz to check existence, publication state, and ownership
   const [quiz] = await sql`
     SELECT id, "resultsPublishedAt"
     FROM quizzes
     WHERE id = ${quizId}
+    AND "createdById" = ${adminId}
   `
-
   if (!quiz) {
     throw { status: 404, message: "Quiz not found" }
   }
@@ -359,7 +364,83 @@ export async function unpublishResults(
   })
 }
 
-// ─── Manual / auto publish ────────────────────────────────────────────────────
+// ─── Rescore attempts after question points change ────────────────────────────
+
+/**
+ * Re-scores all finalized attempts for a quiz using current question points.
+ * Call this after updating a question's point value.
+ * Updates score, totalPoints, percentage, passed on every finalized attempt.
+ * Re-computes ranks if results are already published.
+ */
+export async function rescoreAttempts(quizId: string): Promise<void> {
+  // Get current total points from the live questions table
+  const [{ total }] = await sql`
+    SELECT COALESCE(SUM(points), 0) AS total
+    FROM questions
+    WHERE "quizId" = ${quizId}
+  `
+  const totalPoints = Number(total)
+
+  // Get passing score
+  const [quiz] = await sql`
+    SELECT "passingScore", "resultsPublishedAt" FROM quizzes WHERE id = ${quizId}
+  `
+  if (!quiz) return
+
+  const passingScore = Number(quiz.passingScore)
+
+  // Re-score each finalized attempt: recount correct answers × current points
+  const attempts = await sql`
+    SELECT id FROM quiz_attempts
+    WHERE "quizId" = ${quizId}
+    AND   status  != 'IN_PROGRESS'
+    AND   "scoreOverriddenAt" IS NULL  -- don't overwrite manual overrides
+  `
+
+  for (const att of attempts) {
+    const [scoring] = await sql`
+      SELECT
+        COALESCE(SUM(CASE WHEN a."isCorrect" THEN q.points ELSE 0 END), 0) AS score
+      FROM answers a
+      JOIN questions q ON q.id = a."questionId"
+      WHERE a."attemptId" = ${att.id as string}
+    `
+    const score      = Number(scoring.score)
+    const percentage = totalPoints > 0
+      ? Math.round((score / totalPoints) * 1000) / 10
+      : 0
+    const passed = percentage >= passingScore
+
+    await sql`
+      UPDATE quiz_attempts SET
+        score        = ${score},
+        "totalPoints"= ${totalPoints},
+        percentage   = ${percentage},
+        passed       = ${passed}
+      WHERE id = ${att.id as string}
+    `
+  }
+
+  // Re-run ranks if results are published
+  if (quiz.resultsPublishedAt !== null) {
+    await sql`
+      UPDATE quiz_attempts att
+      SET rank = ranked.rank
+      FROM (
+        SELECT
+          id,
+          RANK() OVER (
+            ORDER BY percentage DESC NULLS LAST,
+                     "timeSpentSeconds" ASC NULLS LAST
+          ) AS rank
+        FROM quiz_attempts
+        WHERE "quizId" = ${quizId}
+        AND   status  != 'IN_PROGRESS'
+      ) ranked
+      WHERE att.id = ranked.id
+    `
+  }
+}
 
 /**
  * Publishes results for a quiz and assigns ranks.

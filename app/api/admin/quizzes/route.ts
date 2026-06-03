@@ -22,7 +22,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const { title, description, timeLimitMinutes, passingScore, shuffleQuestions } = await request.json()
+    const { title, description, timeLimitMinutes, passingScore, shuffleQuestions, shuffleOptions } = await request.json()
 
     if (!title || !timeLimitMinutes) {
       return NextResponse.json({ error: "Title and time limit are required" }, { status: 400 })
@@ -30,17 +30,22 @@ export async function POST(request: Request) {
     if (Number(timeLimitMinutes) <= 0) {
       return NextResponse.json({ error: "Time limit must be greater than 0" }, { status: 400 })
     }
+    const ps = Number(passingScore) || 70
+    if (ps < 0 || ps > 100) {
+      return NextResponse.json({ error: "Passing score must be between 0 and 100" }, { status: 400 })
+    }
 
     const id = generateId()
     await sql`
-      INSERT INTO quizzes (id, title, description, "timeLimitMinutes", "passingScore", "shuffleQuestions", "createdById", "updatedAt")
+      INSERT INTO quizzes (id, title, description, "timeLimitMinutes", "passingScore", "shuffleQuestions", "shuffleOptions", "createdById", "updatedAt")
       VALUES (
         ${id},
         ${title},
         ${description || null},
         ${Number(timeLimitMinutes)},
-        ${Number(passingScore) || 70},
+        ${ps},
         ${shuffleQuestions || false},
+        ${shuffleOptions || false},
         ${session.user.id},
         NOW()
       )

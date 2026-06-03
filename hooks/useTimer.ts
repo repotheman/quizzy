@@ -30,10 +30,10 @@ export function useTimer({ initialSeconds, onTick, onExpire }: UseTimerOptions) 
       return
     }
 
-    const startWall = performance.now()
+    const startWall = Date.now()
 
     const tick = () => {
-      const elapsed   = Math.floor((performance.now() - startWall) / 1000)
+      const elapsed   = Math.floor((Date.now() - startWall) / 1000)
       const remaining = Math.max(0, initialSeconds - elapsed)
       onTickRef.current?.(remaining)
       if (remaining <= 0 && !firedRef.current) {

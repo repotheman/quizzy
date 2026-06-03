@@ -16,7 +16,6 @@ import {
   ChevronRight,
   Lock,
 } from "lucide-react"
-import { format } from "date-fns"
 import { LocalTime } from "@/components/ui/local-time"
 
 async function getAttemptHistory(internId: string) {

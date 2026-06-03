@@ -23,9 +23,9 @@ export async function GET(
 
     const { quizId } = await params
 
-    // Fetch quiz title for the filename slug
+    // Fetch quiz title for the filename slug — verify ownership
     const [quiz] = await sql`
-      SELECT id, title FROM quizzes WHERE id = ${quizId}
+      SELECT id, title FROM quizzes WHERE id = ${quizId} AND "createdById" = ${session.user.id}
     `
     if (!quiz) {
       return new Response(JSON.stringify({ error: "Quiz not found" }), {

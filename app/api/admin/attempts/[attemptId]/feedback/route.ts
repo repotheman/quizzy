@@ -161,11 +161,12 @@ export async function POST(
 
   const [attempt] = await sql`
     SELECT id FROM quiz_attempts WHERE id = ${attemptId}
-  `  if (!attempt) return NextResponse.json({ error: "Attempt not found" }, { status: 404 })
+  `
+  if (!attempt) return NextResponse.json({ error: "Attempt not found" }, { status: 404 })
 
   await sql`
     UPDATE quiz_attempts
-    SET "aiFeedback" = ${JSON.stringify(feedback)}
+    SET "ai_feedback" = ${JSON.stringify(feedback)}
     WHERE id = ${attemptId}
   `
 
@@ -185,7 +186,7 @@ export async function DELETE(
   const { attemptId } = await params
 
   await sql`
-    UPDATE quiz_attempts SET "aiFeedback" = NULL WHERE id = ${attemptId}
+    UPDATE quiz_attempts SET "ai_feedback" = NULL WHERE id = ${attemptId}
   `
 
   return NextResponse.json({ success: true })

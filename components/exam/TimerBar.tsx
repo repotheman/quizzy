@@ -25,14 +25,14 @@ export function TimerBar({ timeRemaining, totalTime }: TimerBarProps) {
   }
 
   return (
-    <div className="flex items-center gap-4 min-w-[200px]">
+    <div className="flex items-center gap-2">
       <Progress
         value={progress}
-        className={cn("h-2 w-24", getProgressColor())}
+        className={cn("h-1.5 w-16 sm:w-24", getProgressColor())}
       />
       <span
         className={cn(
-          "font-mono text-sm font-medium tabular-nums",
+          "font-mono text-xs sm:text-sm font-semibold tabular-nums whitespace-nowrap",
           getTimerColor(),
           minutes < 1 && "animate-pulse"
         )}

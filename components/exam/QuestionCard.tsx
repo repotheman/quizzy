@@ -162,7 +162,7 @@ export function QuestionCard({
                 )}
               >
                 <RadioGroupItem value={option.id} id={option.id} />
-                <span className="text-sm font-mono whitespace-pre-wrap break-all">
+                <span className="text-sm leading-snug break-words">
                   {option.text}
                 </span>
               </Label>

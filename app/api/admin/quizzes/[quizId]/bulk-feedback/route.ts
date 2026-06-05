@@ -198,7 +198,7 @@ export async function POST(
     try {
       await sql`
         UPDATE quiz_attempts
-        SET "aiFeedback" = ${JSON.stringify(f)}
+        SET "ai_feedback" = ${JSON.stringify(f)}::jsonb
         WHERE id = ${attemptId}
         AND "quizId" = ${quizId}
       `

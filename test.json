@@ -1,0 +1,108 @@
+{
+  "overall_summary": "Harshita demonstrated a solid understanding of core Java and Spring Boot concepts, achieving a score of 76.7% and comfortably passing the assessment. Performance was particularly strong in Spring fundamentals, collections, exception handling, and basic stream operations. Most mistakes were concentrated around Java edge cases, functional interfaces, stream internals, JPA behavior, and a few Spring MVC concepts.",
+  "performance_level": "Good",
+  "strengths": [
+    "Strong grasp of Spring Boot fundamentals including dependency injection, bean scopes, transactions, and REST controllers",
+    "Good understanding of Java collections, string handling, exception handling, and common programming constructs"
+  ],
+  "improvements": [
+    "Strengthen knowledge of Java edge cases involving floating-point arithmetic, wrapper caching, and operator behavior",
+    "Improve understanding of Java Streams, functional interfaces, JPA defaults, and Spring MVC request processing"
+  ],
+  "wrong_questions": [
+    {
+      "question": "What is the output of System.out.println(0.1 + 0.2 == 0.3) in Java?",
+      "intern_answer": "true",
+      "correct_answer": "false",
+      "tip": "Floating-point values cannot always be represented exactly in binary, leading to precision errors."
+    },
+    {
+      "question": "What is the output of System.out.println(1.0 / 0) in Java?",
+      "intern_answer": "ArithmeticException",
+      "correct_answer": "Infinity",
+      "tip": "Division of a double by zero returns Infinity rather than throwing an exception."
+    },
+    {
+      "question": "What is the difference between Iterator and ListIterator in Java?",
+      "intern_answer": "They are identical",
+      "correct_answer": "ListIterator supports bidirectional traversal and add/set operations; Iterator supports only forward traversal",
+      "tip": "ListIterator provides additional navigation and modification capabilities for List implementations."
+    },
+    {
+      "question": "What is the purpose of the transient keyword in Java?",
+      "intern_answer": "Marks a field as thread-local",
+      "correct_answer": "Prevents a field from being serialized",
+      "tip": "Transient fields are skipped during Java object serialization."
+    },
+    {
+      "question": "What is a Predicate<T> in Java 8?",
+      "intern_answer": "A function that takes no argument and returns T",
+      "correct_answer": "A function that takes T and returns a boolean",
+      "tip": "Predicate is commonly used for filtering and condition testing."
+    },
+    {
+      "question": "Which of the following creates an infinite stream in Java 8?",
+      "intern_answer": "Collections.stream()",
+      "correct_answer": "Stream.generate(() -> 1)",
+      "tip": "Stream.generate() continuously produces values until limited or terminated."
+    },
+    {
+      "question": "What is a Consumer<T> in Java 8?",
+      "intern_answer": "A function that takes T and returns T",
+      "correct_answer": "A function that takes T, performs an action, and returns void",
+      "tip": "Consumer is designed for side effects such as logging or printing."
+    },
+    {
+      "question": "What does @RequestBody do in a Spring REST controller?",
+      "intern_answer": "Reads a value from the query string",
+      "correct_answer": "Deserializes the HTTP request body (JSON) into a Java object",
+      "tip": "@RequestBody maps request payloads to Java objects using message converters."
+    },
+    {
+      "question": "Stream.of(1, 2, 3).count() is a terminal operation that triggers evaluation of the stream pipeline.",
+      "intern_answer": "False",
+      "correct_answer": "True",
+      "tip": "count() is a terminal operation and executes the stream pipeline."
+    },
+    {
+      "question": "In JPA, the @OneToMany relationship is LAZY by default.",
+      "intern_answer": "False",
+      "correct_answer": "True",
+      "tip": "One-to-many associations are fetched lazily unless explicitly configured otherwise."
+    },
+    {
+      "question": "What will be the output of the following Java code? String s = null; System.out.println(\"'Value:\" + s);",
+      "intern_answer": "Compilation error",
+      "correct_answer": "Value: null",
+      "tip": "String concatenation with null produces the literal text 'null'."
+    },
+    {
+      "question": "What will be the output of the following Java code? int x = 10; int y = x++; int z = ++x;",
+      "intern_answer": "10 10 12",
+      "correct_answer": "12 10 12",
+      "tip": "Post-increment returns the old value, while pre-increment returns the incremented value."
+    },
+    {
+      "question": "A REST API accepts a UserDTO through @RequestBody. The client sends invalid JSON and receives HTTP 400. Which Spring component is responsible for converting JSON into a Java object before validation occurs?",
+      "intern_answer": "DispatcherServlet",
+      "correct_answer": "HttpMessageConverter",
+      "tip": "HttpMessageConverter handles request body serialization and deserialization."
+    },
+    {
+      "question": "A developer adds @Transactional to a service method. Inside the method a RuntimeException occurs after several database updates. What will happen by default?",
+      "intern_answer": "Only the failed update is rolled back",
+      "correct_answer": "The entire transaction is rolled back",
+      "tip": "Spring rolls back the whole transaction for unchecked exceptions by default."
+    }
+  ],
+  "time_assessment": "The assessment was completed in approximately 41 minutes, indicating a thoughtful pace. Time management was appropriate, though spending a little more time reviewing tricky Java edge cases could help improve accuracy.",
+  "recommended_topics": [
+    "Java floating-point behavior and wrapper classes",
+    "Java Functional Interfaces (Predicate, Consumer, Function)",
+    "Java Streams and terminal/intermediate operations",
+    "Spring MVC annotations and request processing",
+    "Spring Transaction Management",
+    "JPA fetch strategies and entity relationships"
+  ],
+  "encouragement": "You have a strong foundation in Java and Spring Boot—focus on advanced language nuances and framework internals, and you can quickly move from good performance to excellent performance."
+}

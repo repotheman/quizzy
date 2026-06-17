@@ -37,6 +37,7 @@ export default function RegisterPage() {
   const router = useRouter()
   const [name, setName]                       = useState("")
   const [email, setEmail]                     = useState("")
+  const [department, setDepartment]           = useState("")
   const [password, setPassword]               = useState("")
   const [confirmPassword, setConfirmPassword] = useState("")
   const [isLoading, setIsLoading]             = useState(false)
@@ -60,7 +61,7 @@ export default function RegisterPage() {
       const response = await fetch("/api/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, email, password, role: "INTERN" }),
+        body: JSON.stringify({ name, email, department, password, role: "INTERN" }),
       })
       const data = await response.json()
       if (!response.ok) throw new Error(data.error || "Registration failed")
@@ -164,6 +165,20 @@ export default function RegisterPage() {
                 required
                 disabled={isLoading}
                 autoComplete="email"
+                className="h-11"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="department">Department</Label>
+              <Input
+                id="department"
+                type="text"
+                placeholder="e.g. Engineering, HR"
+                value={department}
+                onChange={(e) => setDepartment(e.target.value)}
+                required
+                disabled={isLoading}
                 className="h-11"
               />
             </div>

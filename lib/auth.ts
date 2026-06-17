@@ -1,9 +1,13 @@
-import NextAuth from "next-auth"
+import NextAuth, { CredentialsSignin } from "next-auth"
 import "next-auth/jwt"
 import Credentials from "next-auth/providers/credentials"
 import { compare } from "bcryptjs"
 import { sql } from "@/lib/db"
 import type { User } from "@/lib/db"
+
+class UnverifiedEmailError extends CredentialsSignin {
+  code = "unverified_email"
+}
 
 declare module "next-auth" {
   interface User {
@@ -34,7 +38,9 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         password: { label: "Password", type: "password" }
       },
       async authorize(credentials) {
+        console.log("Authorize called with email:", credentials?.email);
         if (!credentials?.email || !credentials?.password) {
+          console.log("Missing credentials");
           return null
         }
 
@@ -45,15 +51,21 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           SELECT * FROM users WHERE email = ${email}
         ` as User[]
 
+        console.log("Found users length:", users.length);
         if (users.length === 0) {
           return null
         }
 
         const user = users[0]
         const isPasswordValid = await compare(password, user.password)
+        console.log("Password valid:", isPasswordValid);
 
         if (!isPasswordValid) {
           return null
+        }
+
+        if (!user.emailVerified) {
+          throw new UnverifiedEmailError()
         }
 
         return {

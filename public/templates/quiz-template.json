@@ -7,16 +7,27 @@
     "correctAnswer": 1
   },
   {
-    "type": "MCQ",
-    "text": "Which programming language is used for web development?",
-    "points": 2,
-    "options": ["Python", "JavaScript", "C++", "Java"],
-    "correctAnswer": 1
-  },
-  {
     "type": "TRUE_FALSE",
     "text": "The Earth revolves around the Sun.",
     "points": 1,
     "correctAnswer": 0
+  },
+  {
+    "type": "OUTPUT",
+    "text": "What is the output of the following Java code?",
+    "language": "java",
+    "codeSnippet": "public class Main {\n  public static void main(String[] args) {\n    System.out.println(5 + 5 + \"5\");\n  }\n}",
+    "points": 2,
+    "options": ["105", "555", "15", "Error"],
+    "correctAnswer": 0
+  },
+  {
+    "type": "MCQ",
+    "text": "What does this code log to the console?",
+    "language": "javascript",
+    "codeSnippet": "const arr = [1, 2, 3];\narr.push(4);\nconsole.log(arr.length);",
+    "points": 2,
+    "options": ["3", "4", "undefined", "Error"],
+    "correctAnswer": 1
   }
 ]

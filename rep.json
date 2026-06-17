@@ -1,108 +1,137 @@
 {
-  "overall_summary": "Harshita demonstrated a solid understanding of core Java and Spring Boot concepts, achieving a score of 76.7% and comfortably passing the assessment. Performance was particularly strong in Spring fundamentals, collections, exception handling, and basic stream operations. Most mistakes were concentrated around Java edge cases, functional interfaces, stream internals, JPA behavior, and a few Spring MVC concepts.",
-  "performance_level": "Good",
-  "strengths": [
-    "Strong grasp of Spring Boot fundamentals including dependency injection, bean scopes, transactions, and REST controllers",
-    "Good understanding of Java collections, string handling, exception handling, and common programming constructs"
-  ],
-  "improvements": [
-    "Strengthen knowledge of Java edge cases involving floating-point arithmetic, wrapper caching, and operator behavior",
-    "Improve understanding of Java Streams, functional interfaces, JPA defaults, and Spring MVC request processing"
-  ],
-  "wrong_questions": [
-    {
-      "question": "What is the output of System.out.println(0.1 + 0.2 == 0.3) in Java?",
-      "intern_answer": "true",
-      "correct_answer": "false",
-      "tip": "Floating-point values cannot always be represented exactly in binary, leading to precision errors."
-    },
-    {
-      "question": "What is the output of System.out.println(1.0 / 0) in Java?",
-      "intern_answer": "ArithmeticException",
-      "correct_answer": "Infinity",
-      "tip": "Division of a double by zero returns Infinity rather than throwing an exception."
-    },
-    {
-      "question": "What is the difference between Iterator and ListIterator in Java?",
-      "intern_answer": "They are identical",
-      "correct_answer": "ListIterator supports bidirectional traversal and add/set operations; Iterator supports only forward traversal",
-      "tip": "ListIterator provides additional navigation and modification capabilities for List implementations."
-    },
-    {
-      "question": "What is the purpose of the transient keyword in Java?",
-      "intern_answer": "Marks a field as thread-local",
-      "correct_answer": "Prevents a field from being serialized",
-      "tip": "Transient fields are skipped during Java object serialization."
-    },
-    {
-      "question": "What is a Predicate<T> in Java 8?",
-      "intern_answer": "A function that takes no argument and returns T",
-      "correct_answer": "A function that takes T and returns a boolean",
-      "tip": "Predicate is commonly used for filtering and condition testing."
-    },
-    {
-      "question": "Which of the following creates an infinite stream in Java 8?",
-      "intern_answer": "Collections.stream()",
-      "correct_answer": "Stream.generate(() -> 1)",
-      "tip": "Stream.generate() continuously produces values until limited or terminated."
-    },
-    {
-      "question": "What is a Consumer<T> in Java 8?",
-      "intern_answer": "A function that takes T and returns T",
-      "correct_answer": "A function that takes T, performs an action, and returns void",
-      "tip": "Consumer is designed for side effects such as logging or printing."
-    },
-    {
-      "question": "What does @RequestBody do in a Spring REST controller?",
-      "intern_answer": "Reads a value from the query string",
-      "correct_answer": "Deserializes the HTTP request body (JSON) into a Java object",
-      "tip": "@RequestBody maps request payloads to Java objects using message converters."
-    },
-    {
-      "question": "Stream.of(1, 2, 3).count() is a terminal operation that triggers evaluation of the stream pipeline.",
-      "intern_answer": "False",
-      "correct_answer": "True",
-      "tip": "count() is a terminal operation and executes the stream pipeline."
-    },
-    {
-      "question": "In JPA, the @OneToMany relationship is LAZY by default.",
-      "intern_answer": "False",
-      "correct_answer": "True",
-      "tip": "One-to-many associations are fetched lazily unless explicitly configured otherwise."
-    },
-    {
-      "question": "What will be the output of the following Java code? String s = null; System.out.println(\"'Value:\" + s);",
-      "intern_answer": "Compilation error",
-      "correct_answer": "Value: null",
-      "tip": "String concatenation with null produces the literal text 'null'."
-    },
-    {
-      "question": "What will be the output of the following Java code? int x = 10; int y = x++; int z = ++x;",
-      "intern_answer": "10 10 12",
-      "correct_answer": "12 10 12",
-      "tip": "Post-increment returns the old value, while pre-increment returns the incremented value."
-    },
-    {
-      "question": "A REST API accepts a UserDTO through @RequestBody. The client sends invalid JSON and receives HTTP 400. Which Spring component is responsible for converting JSON into a Java object before validation occurs?",
-      "intern_answer": "DispatcherServlet",
-      "correct_answer": "HttpMessageConverter",
-      "tip": "HttpMessageConverter handles request body serialization and deserialization."
-    },
-    {
-      "question": "A developer adds @Transactional to a service method. Inside the method a RuntimeException occurs after several database updates. What will happen by default?",
-      "intern_answer": "Only the failed update is rolled back",
-      "correct_answer": "The entire transaction is rolled back",
-      "tip": "Spring rolls back the whole transaction for unchecked exceptions by default."
-    }
-  ],
-  "time_assessment": "The assessment was completed in approximately 41 minutes, indicating a thoughtful pace. Time management was appropriate, though spending a little more time reviewing tricky Java edge cases could help improve accuracy.",
-  "recommended_topics": [
-    "Java floating-point behavior and wrapper classes",
-    "Java Functional Interfaces (Predicate, Consumer, Function)",
-    "Java Streams and terminal/intermediate operations",
-    "Spring MVC annotations and request processing",
-    "Spring Transaction Management",
-    "JPA fetch strategies and entity relationships"
-  ],
-  "encouragement": "You have a strong foundation in Java and Spring Boot—focus on advanced language nuances and framework internals, and you can quickly move from good performance to excellent performance."
+   "overall_summary":"Jai demonstrated a solid understanding of Git and Docker concepts, answering most intermediate and advanced version control and containerization questions correctly. Linux fundamentals were more inconsistent, particularly around process management, shell utilities, signals, permissions, and command-line tooling. With targeted revision of Linux administration concepts and command behavior, performance can improve significantly beyond the passing threshold.",
+   "performance_level":"Average",
+   "strengths":[
+      "Strong understanding of Git workflows, branching, stashing, reflog, merges, and GitHub collaboration",
+      "Good grasp of Docker concepts including networking, volumes, Compose, image layers, health checks, and container management"
+   ],
+   "improvements":[
+      "Strengthen Linux command-line fundamentals, process/thread concepts, shell utilities, and system administration",
+      "Practice command output prediction and scenario-based troubleshooting questions"
+   ],
+   "wrong_questions":[
+      {
+         "question":"What is the difference between a process and a thread in Linux?",
+         "intern_answer":"A thread has its own memory space; a process shares memory with other processes",
+         "correct_answer":"A process has its own memory space; a thread shares memory with other threads in the same process",
+         "tip":"Processes have isolated memory spaces, while threads within the same process share memory and resources."
+      },
+      {
+         "question":"What does 'wc -l file.txt' do in Linux?",
+         "intern_answer":"Lists all words starting with 'l' in the file",
+         "correct_answer":"Counts the number of lines in file.txt",
+         "tip":"The wc command stands for word count, and the -l flag counts lines."
+      },
+      {
+         "question":"What does 'nohup ./script.sh &' do in Linux?",
+         "intern_answer":"Runs script.sh in the foreground and keeps it running after logout",
+         "correct_answer":"Runs script.sh in the background and keeps it running after the terminal is closed",
+         "tip":"nohup prevents termination on logout, and '&' runs the process in the background."
+      },
+      {
+         "question":"What does 'awk '{print $2}' file.txt' do in Linux?",
+         "intern_answer":"Counts all occurrences of the number 2",
+         "correct_answer":"Prints the second column/field of each line in file.txt",
+         "tip":"In awk, $2 refers to the second field of each input line."
+      },
+      {
+         "question":"What is the difference between 'su' and 'sudo' in Linux?",
+         "intern_answer":"'sudo' switches to root permanently; 'su' runs one command as root",
+         "correct_answer":"'su' switches to another user (full session); 'sudo' runs a single command with elevated privileges",
+         "tip":"sudo executes a command with elevated permissions, while su starts a new user session."
+      },
+      {
+         "question":"In Linux, the root user's home directory is /home/root.",
+         "intern_answer":"True",
+         "correct_answer":"False",
+         "tip":"The root user's home directory is typically /root."
+      },
+      {
+         "question":"In Linux, 'ctrl+c' sends a SIGTERM signal to the running process.",
+         "intern_answer":"True",
+         "correct_answer":"False",
+         "tip":"Ctrl+C sends SIGINT, not SIGTERM."
+      },
+      {
+         "question":"In Linux, you can run a cron job as any user — not just root.",
+         "intern_answer":"False",
+         "correct_answer":"True",
+         "tip":"Most users can create personal cron jobs using crontab."
+      },
+      {
+         "question":"You run the following commands in Linux. What will be the output of the last command?\n\necho 'apple' > fruits.txt\necho 'banana' >> fruits.txt\necho 'cherry' >> fruits.txt\nwc -l fruits.txt",
+         "intern_answer":"0",
+         "correct_answer":"3",
+         "tip":"Three lines are written to the file, so wc -l returns 3."
+      },
+      {
+         "question":"What will be printed by the bash script with the for-loop and if condition?",
+         "intern_answer":"not two\nnot two\nnot two",
+         "correct_answer":"not two\ntwo\nnot two",
+         "tip":"The condition becomes true when i equals 2, producing 'two' on the second iteration."
+      },
+      {
+         "question":"What does 'git submodule' do?",
+         "intern_answer":"Creates a lightweight copy of a branch",
+         "correct_answer":"Allows you to embed one Git repository inside another as a subdirectory",
+         "tip":"Submodules are used to track external repositories within a parent repository."
+      },
+      {
+         "question":"In Git, 'git rebase' is generally safer to use on shared public branches than 'git merge'.",
+         "intern_answer":"True",
+         "correct_answer":"False",
+         "tip":"Rebase rewrites history and can disrupt collaborators on shared branches."
+      },
+      {
+         "question":"A Git tag always points to the latest commit on the main branch.",
+         "intern_answer":"True",
+         "correct_answer":"False",
+         "tip":"Tags point to specific commits and do not automatically move."
+      },
+      {
+         "question":"What is the difference between CMD and ENTRYPOINT when both are defined in a Dockerfile?",
+         "intern_answer":"CMD defines the executable; ENTRYPOINT provides default arguments",
+         "correct_answer":"ENTRYPOINT defines the fixed executable; CMD provides default arguments that can be overridden at runtime",
+         "tip":"ENTRYPOINT specifies the main command, while CMD supplies default parameters."
+      },
+      {
+         "question":"Docker volumes are deleted automatically when their associated container is removed with 'docker rm'.",
+         "intern_answer":"True",
+         "correct_answer":"False",
+         "tip":"Docker volumes persist unless explicitly removed."
+      },
+      {
+         "question":"You run: docker run -d --name myapp -p 3000:8080 myimage. How do you access it from your browser?",
+         "intern_answer":"http://localhost:8080",
+         "correct_answer":"http://localhost:3000",
+         "tip":"The format is host_port:container_port, so port 3000 is exposed on the host."
+      },
+      {
+         "question":"What does 'curl -X POST -H \"Content-Type: application/json\" -d '{\"name\":\"test\"}' http://localhost:8080/api' do in Linux?",
+         "intern_answer":"Opens a browser with the POST form at localhost:8080/api",
+         "correct_answer":"Sends an HTTP POST request with a JSON body to the specified URL",
+         "tip":"curl is a command-line HTTP client used to send requests to web servers."
+      },
+      {
+         "question":"In GitHub Actions, a workflow is triggered only by push events — no other event types are supported.",
+         "intern_answer":"True",
+         "correct_answer":"False",
+         "tip":"GitHub Actions supports many triggers including pull_request, workflow_dispatch, schedule, release, and more."
+      }
+   ],
+   "time_assessment":"Jai used approximately 14 minutes (845 seconds), indicating a steady pace. The completion time was reasonable, but several incorrect answers suggest more careful analysis of command behavior and Linux concepts would improve accuracy.",
+   "recommended_topics":[
+      "Linux processes vs threads",
+      "Linux signals and job control",
+      "Cron jobs and user scheduling",
+      "Shell scripting and command output prediction",
+      "awk, wc, grep, and text-processing tools",
+      "Linux user management and permissions",
+      "Git advanced concepts (rebase, tags, submodules)",
+      "Docker CMD vs ENTRYPOINT",
+      "Docker volumes and port mapping",
+      "HTTP requests with curl",
+      "GitHub Actions workflow triggers"
+   ],
+   "encouragement":"You already have a strong foundation in Git and Docker; focusing on Linux administration and command-line fundamentals will quickly raise your score into the passing range."
 }

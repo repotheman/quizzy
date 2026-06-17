@@ -119,15 +119,16 @@ export function QuizEditor({ quiz: initialQuiz }: QuizEditorProps) {
 
   // Publish-Assign State
   const [publishDialogOpen, setPublishDialogOpen] = useState(false)
-  const [assignType, setAssignType] = useState<"all" | "specific">("all")
-  const [interns, setInterns] = useState<{ id: string; name: string; email: string }[]>([])
+  const [assignType, setAssignType] = useState<"all" | "specific" | "department">("all")
+  const [interns, setInterns] = useState<{ id: string; name: string; email: string; department?: string }[]>([])
   const [selectedInternIds, setSelectedInternIds] = useState<string[]>([])
+  const [selectedDepartment, setSelectedDepartment] = useState<string>("")
   const [startAt, setStartAt] = useState<string | null>(null)
   const [endAt, setEndAt] = useState<string | null>(null)
 
   // Load interns for publish dialog
   useEffect(() => {
-    if (publishDialogOpen && assignType === "specific" && interns.length === 0) {
+    if (publishDialogOpen && (assignType === "specific" || assignType === "department") && interns.length === 0) {
       let mounted = true
       ;(async () => {
         try {
@@ -226,6 +227,13 @@ export function QuizEditor({ quiz: initialQuiz }: QuizEditorProps) {
 
       if (assignType === "all") {
         body.assignToAll = true
+      } else if (assignType === "department") {
+        if (!selectedDepartment) {
+          toast.error("Please select a department")
+          setIsPublishing(false)
+          return
+        }
+        body.department = selectedDepartment
       } else {
         if (selectedInternIds.length === 0) {
           toast.error("Please select at least one intern")
@@ -747,10 +755,14 @@ export function QuizEditor({ quiz: initialQuiz }: QuizEditorProps) {
           <div className="space-y-6 py-4">
             <div className="space-y-3">
               <Label>Who should take this quiz?</Label>
-              <RadioGroup value={assignType} onValueChange={(val) => setAssignType(val as "all" | "specific")}>
+              <RadioGroup value={assignType} onValueChange={(val) => setAssignType(val as "all" | "specific" | "department")}>
                 <div className="flex items-center space-x-2">
                   <RadioGroupItem value="all" id="assign-all" />
                   <Label htmlFor="assign-all">All Interns</Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="department" id="assign-department" />
+                  <Label htmlFor="assign-department">By Department</Label>
                 </div>
                 <div className="flex items-center space-x-2">
                   <RadioGroupItem value="specific" id="assign-specific" />
@@ -758,6 +770,25 @@ export function QuizEditor({ quiz: initialQuiz }: QuizEditorProps) {
                 </div>
               </RadioGroup>
             </div>
+
+            {assignType === "department" && (
+              <div className="space-y-2 border rounded-md p-4 bg-muted/20">
+                <Label>Select Department</Label>
+                <Select
+                  value={selectedDepartment}
+                  onValueChange={setSelectedDepartment}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Choose department..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Array.from(new Set(interns.map(i => i.department).filter(Boolean))).sort().map(dept => (
+                      <SelectItem key={dept} value={dept as string}>{dept as string}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
 
             {assignType === "specific" && (
               <div className="space-y-2 border rounded-md p-4 bg-muted/20">

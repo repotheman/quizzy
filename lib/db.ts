@@ -40,6 +40,8 @@ export interface User {
   password: string
   name: string
   role: Role
+  department?: string
+  emailVerified?: Date
   createdAt: Date
   updatedAt: Date
 }

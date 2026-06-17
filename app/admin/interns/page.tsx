@@ -14,9 +14,23 @@ import {
 import { Users, Mail, Calendar } from "lucide-react"
 import { format } from "date-fns"
 import { AssignQuizButton } from "./assign-quiz-button"
+import { DepartmentFilter } from "./department-filter"
+import { BulkAssignQuizButton } from "./bulk-assign-quiz-button"
+import { EditInternButton } from "./edit-intern-button"
 
-async function getInterns() {
-  const interns = await sql`
+async function getInterns(department?: string) {
+  if (department) {
+    return await sql`
+      SELECT 
+        u.*,
+        (SELECT COUNT(*) FROM quiz_assignments WHERE "internId" = u.id) as assignments_count,
+        (SELECT COUNT(*) FROM quiz_attempts WHERE "internId" = u.id AND status != 'IN_PROGRESS') as completed_count
+      FROM users u
+      WHERE u.role = 'INTERN' AND u.department = ${department}
+      ORDER BY u."createdAt" DESC
+    `
+  }
+  return await sql`
     SELECT 
       u.*,
       (SELECT COUNT(*) FROM quiz_assignments WHERE "internId" = u.id) as assignments_count,
@@ -25,7 +39,11 @@ async function getInterns() {
     WHERE u.role = 'INTERN'
     ORDER BY u."createdAt" DESC
   `
-  return interns
+}
+
+async function getDepartments() {
+  const depts = await sql`SELECT DISTINCT department FROM users WHERE role = 'INTERN' AND department IS NOT NULL`
+  return depts.map((d: any) => d.department).filter(Boolean) as string[]
 }
 
 async function getPublishedQuizzes() {
@@ -35,10 +53,14 @@ async function getPublishedQuizzes() {
   return quizzes
 }
 
-export default async function InternsPage() {
-  const [interns, quizzes] = await Promise.all([
-    getInterns(),
+export default async function InternsPage(props: { searchParams: Promise<{ [key: string]: string | string[] | undefined }> | { [key: string]: string | string[] | undefined } }) {
+  const searchParams = await props.searchParams
+  const department = typeof searchParams?.department === 'string' ? searchParams.department : undefined
+
+  const [interns, quizzes, departments] = await Promise.all([
+    getInterns(department),
     getPublishedQuizzes(),
+    getDepartments(),
   ])
 
   return (
@@ -49,6 +71,10 @@ export default async function InternsPage() {
           <p className="text-muted-foreground">
             Manage your interns and assign quizzes
           </p>
+        </div>
+        <div className="flex items-center gap-4">
+          <DepartmentFilter departments={departments} />
+          <BulkAssignQuizButton quizzes={quizzes} departments={departments} />
         </div>
       </div>
 
@@ -76,6 +102,7 @@ export default async function InternsPage() {
                 <TableRow>
                   <TableHead>Name</TableHead>
                   <TableHead>Email</TableHead>
+                  <TableHead>Department</TableHead>
                   <TableHead>Joined</TableHead>
                   <TableHead>Assigned</TableHead>
                   <TableHead>Completed</TableHead>
@@ -93,6 +120,13 @@ export default async function InternsPage() {
                       </div>
                     </TableCell>
                     <TableCell>
+                      {intern.department ? (
+                        <Badge variant="outline" className="font-normal">{intern.department}</Badge>
+                      ) : (
+                        <span className="text-muted-foreground text-sm">-</span>
+                      )}
+                    </TableCell>
+                    <TableCell>
                       <div className="flex items-center gap-1 text-muted-foreground">
                         <Calendar className="size-3.5" />
                         {format(new Date(intern.createdAt), "MMM d, yyyy")}
@@ -105,11 +139,18 @@ export default async function InternsPage() {
                       <Badge variant="secondary">{intern.completed_count}</Badge>
                     </TableCell>
                     <TableCell className="text-right">
-                      <AssignQuizButton 
-                        internId={intern.id} 
-                        internName={intern.name}
-                        quizzes={quizzes}
-                      />
+                      <div className="flex items-center justify-end gap-2">
+                        <EditInternButton 
+                          internId={intern.id}
+                          internName={intern.name}
+                          currentDepartment={intern.department}
+                        />
+                        <AssignQuizButton 
+                          internId={intern.id} 
+                          internName={intern.name}
+                          quizzes={quizzes}
+                        />
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}

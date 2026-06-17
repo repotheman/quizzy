@@ -389,37 +389,35 @@ export async function rescoreAttempts(quizId: string): Promise<void> {
 
   const passingScore = Number(quiz.passingScore)
 
-  // Re-score each finalized attempt: recount correct answers × current points
-  const attempts = await sql`
-    SELECT id FROM quiz_attempts
-    WHERE "quizId" = ${quizId}
-    AND   status  != 'IN_PROGRESS'
-    AND   "scoreOverriddenAt" IS NULL  -- don't overwrite manual overrides
-  `
-
-  for (const att of attempts) {
-    const [scoring] = await sql`
+  // Re-score each finalized attempt in a single atomic bulk query
+  await sql`
+    WITH recalculated AS (
       SELECT
-        COALESCE(SUM(CASE WHEN a."isCorrect" THEN q.points ELSE 0 END), 0) AS score
-      FROM answers a
-      JOIN questions q ON q.id = a."questionId"
-      WHERE a."attemptId" = ${att.id as string}
-    `
-    const score      = Number(scoring.score)
-    const percentage = totalPoints > 0
-      ? Math.round((score / totalPoints) * 1000) / 10
-      : 0
-    const passed = percentage >= passingScore
-
-    await sql`
-      UPDATE quiz_attempts SET
-        score        = ${score},
-        "totalPoints"= ${totalPoints},
-        percentage   = ${percentage},
-        passed       = ${passed}
-      WHERE id = ${att.id as string}
-    `
-  }
+        qa.id AS attempt_id,
+        COALESCE(SUM(CASE WHEN a."isCorrect" THEN q.points ELSE 0 END), 0) AS new_score
+      FROM quiz_attempts qa
+      LEFT JOIN answers a ON a."attemptId" = qa.id
+      LEFT JOIN questions q ON q.id = a."questionId"
+      WHERE qa."quizId" = ${quizId}
+        AND qa.status != 'IN_PROGRESS'
+        AND qa."scoreOverriddenAt" IS NULL
+      GROUP BY qa.id
+    )
+    UPDATE quiz_attempts qa
+    SET
+      score         = r.new_score,
+      "totalPoints" = ${totalPoints},
+      percentage    = CASE 
+                        WHEN ${totalPoints} > 0 THEN ROUND((r.new_score::numeric / ${totalPoints}::numeric) * 100, 1)
+                        ELSE 0 
+                      END,
+      passed        = CASE 
+                        WHEN ${totalPoints} > 0 AND ROUND((r.new_score::numeric / ${totalPoints}::numeric) * 100, 1) >= ${passingScore} THEN true 
+                        ELSE false 
+                      END
+    FROM recalculated r
+    WHERE qa.id = r.attempt_id
+  `
 
   // Re-run ranks if results are published
   if (quiz.resultsPublishedAt !== null) {

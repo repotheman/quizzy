@@ -28,7 +28,7 @@ interface QuestionCardProps {
  * - Inline code: `code`
  * - Plain text paragraphs (newlines preserved)
  */
-function QuestionText({ text }: { text: string }) {
+export function QuestionText({ text }: { text: string }) {
   // Split on fenced code blocks first
   const fenceRegex = /```(\w*)\n?([\s\S]*?)```/g
   const parts: React.ReactNode[] = []

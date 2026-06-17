@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { sql, generateId } from "@/lib/db"
+import { sendQuizAssignmentEmail } from "@/lib/mail"
 
 export async function POST(request: Request) {
   const session = await auth()
@@ -15,12 +16,13 @@ export async function POST(request: Request) {
       internId,
       internIds,
       internEmails,
+      department,
       assignToAll,
       startAt,
       endAt,
     } = await request.json()
 
-    if (!quizId || (!internId && !internIds && !internEmails && !assignToAll)) {
+    if (!quizId || (!internId && !internIds && !internEmails && !department && !assignToAll)) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 })
     }
 
@@ -34,7 +36,7 @@ export async function POST(request: Request) {
 
     // Quiz must exist and be published before assigning
     const [quiz] = await sql`
-      SELECT id, "isPublished" FROM quizzes WHERE id = ${quizId}
+      SELECT id, title, "isPublished" FROM quizzes WHERE id = ${quizId}
     `
     if (!quiz) {
       return NextResponse.json({ error: "Quiz not found" }, { status: 404 })
@@ -51,6 +53,9 @@ export async function POST(request: Request) {
 
     if (assignToAll) {
       const rows = await sql`SELECT id FROM users WHERE role = 'INTERN'`
+      internIdsToAssign = rows.map((r: { id: string }) => r.id)
+    } else if (department) {
+      const rows = await sql`SELECT id FROM users WHERE role = 'INTERN' AND department = ${department}`
       internIdsToAssign = rows.map((r: { id: string }) => r.id)
     } else if (internIds && Array.isArray(internIds)) {
       internIdsToAssign = internIds
@@ -117,20 +122,40 @@ export async function POST(request: Request) {
     }
 
     // Batch insert new assignments
-    for (const item of toInsert) {
+    if (toInsert.length > 0) {
+      const ids = toInsert.map((i) => i.id)
+      const internIds = toInsert.map((i) => i.internId)
+
       await sql`
-        INSERT INTO quiz_assignments
-          (id, "quizId", "internId", "assignedById", "startAt", "endAt")
-        VALUES
-          (
-            ${item.id},
-            ${quizId},
-            ${item.internId},
-            ${session.user.id},
-            ${startAt ? new Date(startAt) : null},
-            ${endAt   ? new Date(endAt)   : null}
-          )
+        INSERT INTO quiz_assignments (id, "quizId", "internId", "assignedById", "startAt", "endAt")
+        SELECT
+          t.id,
+          ${quizId},
+          t."internId",
+          ${session.user.id},
+          ${startAt ? new Date(startAt) : null},
+          ${endAt ? new Date(endAt) : null}
+        FROM UNNEST(
+          ${ids}::text[],
+          ${internIds}::text[]
+        ) AS t(id, "internId")
       `
+    }
+
+    // Trigger emails asynchronously in the background for new AND updated assignments
+    if (internIdsToAssign.length > 0) {
+      const usersToEmail = await sql`
+        SELECT email FROM users WHERE id = ANY(${internIdsToAssign}::text[]) AND role = 'INTERN'
+      `
+      
+      const sDate = startAt ? new Date(startAt) : null
+      const eDate = endAt ? new Date(endAt) : null
+      
+      Promise.allSettled(
+        usersToEmail.map((user: { email: string }) => 
+          sendQuizAssignmentEmail(user.email, quiz.title as string, sDate, eDate)
+        )
+      ).catch(console.error)
     }
 
     return NextResponse.json({ message: "Assignment processed", results }, { status: 201 })

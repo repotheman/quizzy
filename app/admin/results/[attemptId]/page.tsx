@@ -10,9 +10,10 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table"
 import {
-  ArrowLeft, User, FileQuestion, Clock, Target, AlertTriangle,
-  CheckCircle, XCircle, Pencil, ShieldAlert, Hash, Calendar, Timer,
+  ArrowLeft, User, Clock, Target, AlertTriangle,
+  CheckCircle, XCircle, Pencil, ShieldAlert, Hash, Calendar, Timer, FileQuestion,
 } from "lucide-react"
+import { QuestionText } from "@/components/exam/QuestionCard"
 import { LocalTime } from "@/components/ui/local-time"
 import { TerminateAttemptButton } from "./terminate-button"
 import { ScoreOverrideForm } from "./score-override-form"
@@ -274,8 +275,8 @@ export default async function AttemptDetailsPage({
                 return (
                   <TableRow key={q.question_id as string} className="align-top">
                     <TableCell className="pl-6 pt-4 text-muted-foreground font-mono text-sm">{idx + 1}</TableCell>
-                    <TableCell className="pt-4 max-w-xs">
-                      <p className="font-medium leading-snug">{q.question_text as string}</p>
+                    <TableCell className="pt-4 max-w-xs sm:max-w-md lg:max-w-lg">
+                      <div className="font-medium leading-snug break-words whitespace-pre-wrap"><QuestionText text={q.question_text as string} /></div>
                     </TableCell>
                     <TableCell className="pt-3">
                       <div className="space-y-1.5">
@@ -302,7 +303,7 @@ export default async function AttemptDetailsPage({
                           return (
                             <div key={opt.id as string} className={rowClass}>
                               {indicator}
-                              <span className="leading-snug">{opt.text as string}</span>
+                              <div className="leading-snug break-words flex-1 whitespace-pre-wrap"><QuestionText text={opt.text as string} /></div>
                               {isSelected && (
                                 <Badge variant="outline" className={`ml-auto shrink-0 text-xs ${
                                   isCorrectOpt

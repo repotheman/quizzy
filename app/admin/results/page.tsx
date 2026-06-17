@@ -23,6 +23,7 @@ import { PublishResultsButton } from "../leaderboard/publish-results-button"
 import { UnpublishResultsButton } from "../leaderboard/unpublish-results-button"
 import { ExportCsvButton } from "../leaderboard/export-csv-button"
 import { BulkAiFeedbackPanel } from "./bulk-ai-feedback-panel"
+import { DepartmentFilter } from "../interns/department-filter"
 
 async function getAllQuizzes() {
   return sql`
@@ -32,7 +33,25 @@ async function getAllQuizzes() {
   `
 }
 
-async function getQuizDetails(quizId: string) {
+async function getQuizDetails(quizId: string, department?: string) {
+  if (department) {
+    const [quiz] = await sql`
+      SELECT
+        q.id, q.title, q."passingScore", q."timeLimitMinutes",
+        q."resultsPublishedAt", q."resultsPublishedBy",
+        (SELECT COUNT(*) FROM quiz_assignments qa JOIN users u ON u.id = qa."internId" WHERE qa."quizId" = q.id AND u.department = ${department}) AS total_assigned,
+        (SELECT COUNT(*) FROM quiz_assignments qa JOIN users u ON u.id = qa."internId" WHERE qa."quizId" = q.id AND qa."joinedAt" IS NOT NULL AND u.department = ${department}) AS total_joined,
+        (SELECT COUNT(*) FROM quiz_attempts qat JOIN users u ON u.id = qat."internId" WHERE qat."quizId" = q.id AND qat.status != 'IN_PROGRESS' AND u.department = ${department}) AS total_completed,
+        (SELECT COUNT(*) FROM quiz_attempts qat JOIN users u ON u.id = qat."internId" WHERE qat."quizId" = q.id AND qat.status = 'IN_PROGRESS' AND u.department = ${department}) AS total_in_progress,
+        (SELECT COUNT(*) FROM quiz_attempts qat JOIN users u ON u.id = qat."internId" WHERE qat."quizId" = q.id AND qat.passed = true AND u.department = ${department}) AS total_passed,
+        (SELECT COALESCE(AVG(percentage), 0) FROM quiz_attempts qat JOIN users u ON u.id = qat."internId" WHERE qat."quizId" = q.id AND qat.status != 'IN_PROGRESS' AND u.department = ${department}) AS avg_score,
+        (SELECT COALESCE(MAX(percentage), 0) FROM quiz_attempts qat JOIN users u ON u.id = qat."internId" WHERE qat."quizId" = q.id AND qat.status != 'IN_PROGRESS' AND u.department = ${department}) AS max_score,
+        (SELECT COALESCE(MIN(percentage), 0) FROM quiz_attempts qat JOIN users u ON u.id = qat."internId" WHERE qat."quizId" = q.id AND qat.status != 'IN_PROGRESS' AND u.department = ${department}) AS min_score
+      FROM quizzes q WHERE q.id = ${quizId}
+    `
+    return quiz ?? null
+  }
+
   const [quiz] = await sql`
     SELECT
       q.id, q.title, q."passingScore", q."timeLimitMinutes",
@@ -50,13 +69,31 @@ async function getQuizDetails(quizId: string) {
   return quiz ?? null
 }
 
-async function getAttempts(quizId: string) {
+async function getAttempts(quizId: string, department?: string) {
+  if (department) {
+    return sql`
+      SELECT
+        qa.id, qa.status, qa.score, qa."totalPoints", qa.percentage, qa.passed,
+        qa.rank, qa.violations, qa."timeSpentSeconds", qa."startedAt", qa."submittedAt",
+        qa."scoreOverriddenAt",
+        u.name AS intern_name, u.email AS intern_email, u.department AS intern_department,
+        (SELECT COUNT(*) FROM violations WHERE "attemptId" = qa.id) AS violation_count
+      FROM quiz_attempts qa
+      JOIN users u ON qa."internId" = u.id
+      WHERE qa."quizId" = ${quizId} AND u.department = ${department}
+      ORDER BY
+        CASE qa.status WHEN 'IN_PROGRESS' THEN 0 ELSE 1 END,
+        qa.percentage DESC NULLS LAST,
+        qa."timeSpentSeconds" ASC NULLS LAST
+    `
+  }
+
   return sql`
     SELECT
       qa.id, qa.status, qa.score, qa."totalPoints", qa.percentage, qa.passed,
       qa.rank, qa.violations, qa."timeSpentSeconds", qa."startedAt", qa."submittedAt",
       qa."scoreOverriddenAt",
-      u.name AS intern_name, u.email AS intern_email,
+      u.name AS intern_name, u.email AS intern_email, u.department AS intern_department,
       (SELECT COUNT(*) FROM violations WHERE "attemptId" = qa.id) AS violation_count
     FROM quiz_attempts qa
     JOIN users u ON qa."internId" = u.id
@@ -68,14 +105,29 @@ async function getAttempts(quizId: string) {
   `
 }
 
-async function getNotJoined(quizId: string) {
+async function getNotJoined(quizId: string, department?: string) {
+  if (department) {
+    return sql`
+      SELECT u.id, u.name, u.email, u.department
+      FROM quiz_assignments qa
+      JOIN users u ON u.id = qa."internId"
+      WHERE qa."quizId" = ${quizId} AND qa."joinedAt" IS NULL AND u.department = ${department}
+      ORDER BY u.name ASC
+    `
+  }
+
   return sql`
-    SELECT u.id, u.name, u.email
+    SELECT u.id, u.name, u.email, u.department
     FROM quiz_assignments qa
     JOIN users u ON u.id = qa."internId"
     WHERE qa."quizId" = ${quizId} AND qa."joinedAt" IS NULL
     ORDER BY u.name ASC
   `
+}
+
+async function getDepartments() {
+  const depts = await sql`SELECT DISTINCT department FROM users WHERE role = 'INTERN' AND department IS NOT NULL`
+  return depts.map((d: any) => d.department).filter(Boolean) as string[]
 }
 
 function StatusBadge({ status, passed }: { status: string; passed: boolean | null }) {
@@ -99,18 +151,21 @@ function fmt(s: number) { return `${Math.floor(s / 60)}m ${s % 60}s` }
 export default async function ResultsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ quizId?: string; tab?: string }>
+  searchParams: Promise<{ quizId?: string; tab?: string; department?: string }>
 }) {
   const session = await auth()
   if (!session?.user || session.user.role !== "ADMIN") redirect("/login")
 
-  const { quizId: rawQuizId, tab = "overview" } = await searchParams
+  const { quizId: rawQuizId, tab = "overview", department } = await searchParams
   const quizzes = await getAllQuizzes()
   const effectiveQuizId = rawQuizId ?? (quizzes[0]?.id as string | undefined)
 
-  const [quiz, attempts, notJoined] = effectiveQuizId
-    ? await Promise.all([getQuizDetails(effectiveQuizId), getAttempts(effectiveQuizId), getNotJoined(effectiveQuizId)])
-    : [null, [], []]
+  const [quiz, attempts, notJoined, departments] = await Promise.all([
+    effectiveQuizId ? getQuizDetails(effectiveQuizId, department) : Promise.resolve(null),
+    effectiveQuizId ? getAttempts(effectiveQuizId, department) : Promise.resolve([]),
+    effectiveQuizId ? getNotJoined(effectiveQuizId, department) : Promise.resolve([]),
+    getDepartments()
+  ])
 
   const finalized   = attempts.filter((a) => a.status !== "IN_PROGRESS")
   const inProgress  = attempts.filter((a) => a.status === "IN_PROGRESS")
@@ -125,22 +180,26 @@ export default async function ResultsPage({
           <h1 className="text-3xl font-bold tracking-tight">Results</h1>
           <p className="text-muted-foreground">Per-quiz scores, rankings, and analysis</p>
         </div>
-        <form method="GET" className="flex items-center gap-2">
-          <input type="hidden" name="tab" value={tab} />
-          <Select name="quizId" defaultValue={effectiveQuizId ?? ""}>
-            <SelectTrigger className="w-72">
-              <SelectValue placeholder="Select a quiz" />
-            </SelectTrigger>
-            <SelectContent>
-              {quizzes.map((q) => (
-                <SelectItem key={q.id as string} value={q.id as string}>
-                  {q.title as string}{q.resultsPublishedAt ? " ✓" : ""}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Button type="submit" variant="outline" size="sm">Load</Button>
-        </form>
+        <div className="flex items-center gap-4">
+          <DepartmentFilter departments={departments} />
+          <form method="GET" className="flex items-center gap-2">
+            <input type="hidden" name="tab" value={tab} />
+            {department && <input type="hidden" name="department" value={department} />}
+            <Select name="quizId" defaultValue={effectiveQuizId ?? ""}>
+              <SelectTrigger className="w-72">
+                <SelectValue placeholder="Select a quiz" />
+              </SelectTrigger>
+              <SelectContent>
+                {quizzes.map((q) => (
+                  <SelectItem key={q.id as string} value={q.id as string}>
+                    {q.title as string}{q.resultsPublishedAt ? " ✓" : ""}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button type="submit" variant="outline" size="sm">Load</Button>
+          </form>
+        </div>
       </div>
 
       {!quiz ? (

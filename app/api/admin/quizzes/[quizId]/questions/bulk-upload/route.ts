@@ -240,40 +240,68 @@ export async function POST(
     `
     let nextOrder = Number(max_order) + 1
 
-    let imported = 0
+    const questionIds = result.questions.map(() => generateId())
+    const qTypes = result.questions.map(q => q.type)
+    const qTexts = result.questions.map(q => q.text)
+    const qPoints = result.questions.map(q => q.points)
+    const qOrders = result.questions.map((_, i) => nextOrder + i)
 
-    for (const q of result.questions) {
-      const questionId = generateId()
+    const allOptionIds: string[] = []
+    const allOptionQIds: string[] = []
+    const allOptionTexts: string[] = []
+    const allOptionCorrects: boolean[] = []
+    const allOptionOrders: number[] = []
 
+    for (let i = 0; i < result.questions.length; i++) {
+      const q = result.questions[i]
+      const questionId = questionIds[i]
+      
+      for (let j = 0; j < q.options.length; j++) {
+        allOptionIds.push(generateId())
+        allOptionQIds.push(questionId)
+        allOptionTexts.push(q.options[j])
+        allOptionCorrects.push(j === q.correctAnswer)
+        allOptionOrders.push(j + 1)
+      }
+    }
+
+    // Insert all questions in bulk
+    if (result.questions.length > 0) {
       await sql`
         INSERT INTO questions (id, "quizId", type, text, points, "order", "updatedAt")
-        VALUES (${questionId}, ${quizId}, ${q.type}, ${q.text}, ${q.points}, ${nextOrder}, NOW())
+        SELECT 
+          t.id, 
+          ${quizId}, 
+          t.type::"QuestionType", 
+          t.text, 
+          t.points, 
+          t."order", 
+          NOW()
+        FROM UNNEST(
+          ${questionIds}::text[],
+          ${qTypes}::text[],
+          ${qTexts}::text[],
+          ${qPoints}::int[],
+          ${qOrders}::int[]
+        ) AS t(id, type, text, points, "order")
       `
-
-      // Batch insert all options for this question in a single query
-      if (q.options.length > 0) {
-        // Build values using per-row sql fragments then unnest
-        const ids       = q.options.map(() => generateId())
-        const qIds      = q.options.map(() => questionId)
-        const texts     = q.options
-        const corrects  = q.options.map((_, j) => j === q.correctAnswer)
-        const orders    = q.options.map((_, j) => j + 1)
-
-        await sql`
-          INSERT INTO options (id, "questionId", text, "isCorrect", "order")
-          SELECT * FROM UNNEST(
-            ${ids}::text[],
-            ${qIds}::text[],
-            ${texts}::text[],
-            ${corrects}::boolean[],
-            ${orders}::int[]
-          ) AS t(id, "questionId", text, "isCorrect", "order")
-        `
-      }
-
-      nextOrder++
-      imported++
     }
+
+    // Insert all options in bulk
+    if (allOptionIds.length > 0) {
+      await sql`
+        INSERT INTO options (id, "questionId", text, "isCorrect", "order")
+        SELECT * FROM UNNEST(
+          ${allOptionIds}::text[],
+          ${allOptionQIds}::text[],
+          ${allOptionTexts}::text[],
+          ${allOptionCorrects}::boolean[],
+          ${allOptionOrders}::int[]
+        ) AS t(id, "questionId", text, "isCorrect", "order")
+      `
+    }
+
+    const imported = result.questions.length
 
     return NextResponse.json({
       imported,

@@ -10,7 +10,7 @@ export async function GET() {
 
   try {
     const interns = await sql`
-      SELECT id, name, email FROM users WHERE role = 'INTERN' ORDER BY name ASC
+      SELECT id, name, email, department FROM users WHERE role = 'INTERN' ORDER BY name ASC
     `
 
     return NextResponse.json(interns)

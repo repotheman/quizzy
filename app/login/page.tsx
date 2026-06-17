@@ -27,7 +27,11 @@ export default function LoginPage() {
         redirect: false,
       })
       if (result?.error) {
-        toast.error("Invalid email or password")
+        if (result.error === "unverified_email") {
+          toast.error("Please verify your email address before logging in. Check your inbox.")
+        } else {
+          toast.error("Invalid email or password")
+        }
       } else {
         router.push("/")
         router.refresh()
@@ -119,7 +123,12 @@ export default function LoginPage() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
+              <div className="flex items-center justify-between">
+                <Label htmlFor="password">Password</Label>
+                <Link href="/forgot-password" className="text-sm font-medium text-primary hover:underline underline-offset-4">
+                  Forgot password?
+                </Link>
+              </div>
               <div className="relative">
                 <Input
                   id="password"

@@ -7,7 +7,7 @@ export default auth((req) => {
   const userRole = req.auth?.user?.role
 
   // Public routes
-  const publicRoutes = ["/login", "/register"]
+  const publicRoutes = ["/login", "/register", "/forgot-password", "/reset-password", "/verify-email"]
   if (publicRoutes.includes(pathname)) {
     if (isAuthenticated) {
       // Redirect authenticated users away from auth pages

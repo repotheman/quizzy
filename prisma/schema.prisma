@@ -43,9 +43,11 @@ model User {
   email     String   @unique
   password  String
   name      String
-  role      Role     @default(INTERN)
-  createdAt DateTime @default(now()) @db.Timestamptz
-  updatedAt DateTime @updatedAt @db.Timestamptz
+  role         Role     @default(INTERN)
+  department   String?
+  emailVerified DateTime? @db.Timestamptz
+  createdAt    DateTime @default(now()) @db.Timestamptz
+  updatedAt    DateTime @updatedAt @db.Timestamptz
 
   createdQuizzes   Quiz[]           @relation("QuizCreator")
   publishedQuizzes Quiz[]           @relation("QuizPublisher")
@@ -219,5 +221,27 @@ model AdminAuditLog {
   @@index([targetType, targetId])
   @@index([adminId])
   @@map("admin_audit_log")
+}
+
+model VerificationToken {
+  id        String   @id @default(uuid())
+  email     String
+  token     String   @unique
+  expiresAt DateTime @db.Timestamptz
+  createdAt DateTime @default(now()) @db.Timestamptz
+
+  @@unique([email, token])
+  @@map("verification_tokens")
+}
+
+model PasswordResetToken {
+  id        String   @id @default(uuid())
+  email     String
+  token     String   @unique
+  expiresAt DateTime @db.Timestamptz
+  createdAt DateTime @default(now()) @db.Timestamptz
+
+  @@unique([email, token])
+  @@map("password_reset_tokens")
 }
 
